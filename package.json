@@ -4,9 +4,13 @@
   "type": "module",
   "private": true,
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^7"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
   }
 }

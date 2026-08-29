@@ -25,9 +25,91 @@ const db = new Database('facility.sqlite', { create: true });
 
 type WorkType = 'instinct' | 'insight' | 'attachment' | 'repression';
 type StatName = 'fortitude' | 'prudence' | 'temperance' | 'justice';
+type DamageType = 'RED' | 'WHITE' | 'BLACK' | 'PALE';
+type DepartmentName = 'general' | 'control' | 'information' | 'security' | 'training' | 'command';
 type AgentStatus = 'idle' | 'working' | 'injured' | 'stressed' | 'panicked' | 'traumatized' | 'recovering' | 'dead';
 type UpgradeType = 'containment' | 'research' | 'security' | 'welfare';
 type Behaviour = 'docile' | 'possessive' | 'volatile' | 'predatory';
+
+type FacilityData = {
+  guild_id: string;
+  energy: number;
+  quota: number;
+  dictator_mode: number;
+  manager_id: string;
+  is_started: number;
+  is_paused: number;
+  day_count: number;
+  phase: number;
+  category_id: string | null;
+  containment_channel_id: string | null;
+  research: number;
+  lob_points: number;
+  containment_level: number;
+  security_level: number;
+  welfare_level: number;
+  event_seed: number;
+  stable_days: number;
+};
+
+type AgentRow = {
+  discord_id: string;
+  guild_id: string;
+  name: string;
+  hp: number;
+  max_hp: number;
+  sp: number;
+  max_sp: number;
+  weapon: string;
+  suit: string;
+  status: AgentStatus;
+  level: number;
+  fortitude: number;
+  prudence: number;
+  temperance: number;
+  justice: number;
+  experience: number;
+  trait: string;
+  recovery_days: number;
+  assignments: number;
+  kills: number;
+  promotions: number;
+  ego_gifts?: string;
+  equipped_gift?: string;
+};
+
+type AbnormalityRow = {
+  id: number;
+  guild_id: string;
+  name: string;
+  risk: string;
+  hp: number;
+  max_hp: number;
+  qliphoth: number;
+  max_qliphoth: number;
+  damage_type: string;
+  damage_amt: number;
+  is_breaching: number;
+  work_instinct: number;
+  work_insight: number;
+  work_attachment: number;
+  work_repression: number;
+  escape_chance: number;
+  behaviour: Behaviour;
+  description: string;
+  rage: number;
+  breaches: number;
+  suppressed_count: number;
+  last_worked_by?: string;
+  work_streak?: number;
+  gift_id?: string;
+  current_work_process?: string;
+  meltdown_timer?: number;
+  meltdown_state?: string;
+};
+
+const MAX_SAVE_SLOTS = 5;
+const SUPPRESSION_COOLDOWNS = new Map<string, number>();
 
 // Higher-risk containment can be pushed to deeper (riskier, higher-yield) work levels.
 const WORK_LEVEL_MAX: Record<string, number> = {
@@ -88,6 +170,28 @@ const LOBOTOMY_EMOJIS = {
   sp: 'SPIcon'
 } as const;
 
+const OBSERVATION_LEVELS = [
+  { level: 1, title: 'basic observation', description: 'basic damage type and work success rates' },
+  { level: 2, title: 'qliphoth log', description: 'exact qliphoth triggers and meltdown timing' },
+  { level: 3, title: 'ego extraction', description: 'weapon and suit extraction from PE pool' },
+  { level: 4, title: 'institutional memory', description: '+5% max success and E.G.O gift access' }
+] as const;
+
+const ORDEAL_STAGES = [
+  { threshold: 150, color: 'amber', label: 'Amber Ordeal' },
+  { threshold: 300, color: 'crimson', label: 'Crimson Ordeal' },
+  { threshold: 500, color: 'green', label: 'Green Ordeal' }
+] as const;
+
+const DEPARTMENT_SECTORS: Record<DepartmentName, string> = {
+  general: 'central-command',
+  control: 'control-dept',
+  information: 'information-dept',
+  security: 'security-dept',
+  training: 'training-dept',
+  command: 'central-command'
+};
+
 function getGuildEmojiObject(guild: any, emojiName: string) {
   const name = String(emojiName || '').trim();
   if (!name) return null;
@@ -102,6 +206,23 @@ function getGuildEmojiString(guild: any, emojiName: string, fallback = ''): stri
   return found ? found.toString() : fallback;
 }
 
+function isCriticallyLow(agent: any) {
+  return agent.hp <= agent.max_hp * 0.2 || agent.sp <= agent.max_sp * 0.2;
+}
+
+function buildCombatWarningRow(abnoId: string) {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`suppress_confirm_${abnoId}`)
+      .setLabel('⚔️ CONTINUE')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`suppress_retreat_${abnoId}`)
+      .setLabel('🏃 RETREAT')
+      .setStyle(ButtonStyle.Secondary)
+  );
+}
+
 const RISK_VALUES: Record<string, number> = {
   ZAYIN: 1,
   TETH: 2,
@@ -110,7 +231,14 @@ const RISK_VALUES: Record<string, number> = {
   ALEPH: 5
 };
 
-const EGO_WEAPONS: Record<string, { name: string; type: 'RED' | 'WHITE' | 'BLACK' | 'PALE'; min: number; max: number; speed: number }> = {
+const DAMAGE_TYPES: Record<DamageType, { label: string; icon: string; description: string }> = {
+  RED: { label: 'RED', icon: '🔴', description: 'Physical damage. High against low-defense, high-armor threats.' },
+  WHITE: { label: 'WHITE', icon: '⚪', description: 'Mental damage. Hits the abnormality’s mental fortitude and SP channel.' },
+  BLACK: { label: 'BLACK', icon: '⚫', description: 'Hybrid damage split between HP and SP.' },
+  PALE: { label: 'PALE', icon: '🩶', description: 'Percentage-based damage; scales off max HP.' }
+};
+
+const EGO_WEAPONS: Record<string, { name: string; type: DamageType; min: number; max: number; speed: number }> = {
   riot_stick: { name: 'Riot Stick', type: 'RED', min: 2, max: 4, speed: 1.0 },
   penitence: { name: 'Penitence', type: 'WHITE', min: 3, max: 5, speed: 1.05 },
   mimicry: { name: 'Mimicry', type: 'RED', min: 12, max: 25, speed: 0.8 },
@@ -194,6 +322,15 @@ for (const template of ABNORMALITY_TEMPLATES) {
   const g = (template as any).gift as Omit<GiftDef, 'sourceAbno'> | undefined;
   if (g) EGO_GIFTS[g.id] = { ...g, sourceAbno: template.name };
 }
+
+const EGO_EQUIPMENT_SEED: Array<{ id: string; category: 'weapon' | 'suit'; name: string; type?: DamageType; min?: number; max?: number; speed?: number; red?: number; white?: number; black?: number; pale?: number; defense?: number; description: string }> = [
+  { id: 'riot_stick', category: 'weapon', name: 'Riot Stick', type: 'RED', min: 2, max: 4, speed: 1.0, description: 'A simple, reliable blunt weapon used by trainees.' },
+  { id: 'penitence', category: 'weapon', name: 'Penitence', type: 'WHITE', min: 3, max: 5, speed: 1.05, description: 'A focused weapon that channels mental force.' },
+  { id: 'mimicry', category: 'weapon', name: 'Mimicry', type: 'RED', min: 12, max: 25, speed: 0.8, description: 'A high-output melee weapon with a sharp but risky profile.' },
+  { id: 'basic_suit', category: 'suit', name: 'Basic Suit', red: 1.0, white: 1.0, black: 1.0, pale: 1.5, defense: 0, description: 'The default issue suit used by new agents.' },
+  { id: 'penitence_suit', category: 'suit', name: 'Penitence Suit', red: 0.9, white: 0.8, black: 1.0, pale: 1.5, defense: 1, description: 'A light armor set tuned for mental resistance.' },
+  { id: 'mimicry_suit', category: 'suit', name: 'Mimicry Suit', red: 0.2, white: 0.4, black: 0.5, pale: 1.2, defense: 3, description: 'High-risk, high-reward armor that heavily reduces physical pressure.' }
+];
 
 // ==========================================
 // 🗃️ DATABASE SCHEMA + LIGHTWEIGHT MIGRATIONS
@@ -291,7 +428,7 @@ for (const [column, definition] of [
   ['temperance', 'INTEGER DEFAULT 1'], ['justice', 'INTEGER DEFAULT 1'], ['experience', 'INTEGER DEFAULT 0'],
   ['trait', "TEXT DEFAULT 'calm'"], ['recovery_days', 'INTEGER DEFAULT 0'], ['assignments', 'INTEGER DEFAULT 0'],
   ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'],
-  ['ego_gifts', "TEXT DEFAULT '[]'"], ['equipped_gift', "TEXT DEFAULT ''"]
+  ['ego_gifts', "TEXT DEFAULT '[]'"], ['equipped_gift', "TEXT DEFAULT ''"], ['department', "TEXT DEFAULT 'general'"], ['auto_response', "TEXT DEFAULT ''"]
 ] as const) addColumnIfMissing('agents', column, definition);
 
 db.query(`
@@ -313,14 +450,21 @@ db.query(`
     security_level INTEGER DEFAULT 1,
     welfare_level INTEGER DEFAULT 1,
     event_seed INTEGER DEFAULT 0,
-    stable_days INTEGER DEFAULT 0
+    stable_days INTEGER DEFAULT 0,
+    meltdown_alarm INTEGER DEFAULT 0,
+    meltdown_targets TEXT DEFAULT '[]',
+    department_unlocks TEXT DEFAULT '[]',
+    recruitment_points INTEGER DEFAULT 0
   )
 `).run();
 
 for (const [column, definition] of [
   ['phase', 'INTEGER DEFAULT 8'], ['research', 'INTEGER DEFAULT 100'], ['lob_points', 'INTEGER DEFAULT 250'],
   ['containment_level', 'INTEGER DEFAULT 1'], ['security_level', 'INTEGER DEFAULT 1'],
-  ['welfare_level', 'INTEGER DEFAULT 1'], ['event_seed', 'INTEGER DEFAULT 0'], ['stable_days', 'INTEGER DEFAULT 0']
+  ['welfare_level', 'INTEGER DEFAULT 1'], ['event_seed', 'INTEGER DEFAULT 0'], ['stable_days', 'INTEGER DEFAULT 0'],
+  ['meltdown_alarm', 'INTEGER DEFAULT 0'], ['meltdown_targets', "TEXT DEFAULT '[]'"],
+  ['department_unlocks', "TEXT DEFAULT '[]'"], ['recruitment_points', 'INTEGER DEFAULT 0'],
+  ['ordeal_active', 'INTEGER DEFAULT 0'], ['active_ordeal', "TEXT DEFAULT ''"], ['ordeal_timer', 'INTEGER DEFAULT 0']
 ] as const) addColumnIfMissing('facility', column, definition);
 
 db.query(`
@@ -358,8 +502,35 @@ for (const [column, definition] of [
   ['description', "TEXT DEFAULT ''"], ['rage', 'INTEGER DEFAULT 0'], ['breaches', 'INTEGER DEFAULT 0'],
   ['suppressed_count', 'INTEGER DEFAULT 0'], ['last_worked_by', "TEXT DEFAULT ''"], ['work_streak', 'INTEGER DEFAULT 0'],
   ['gift_id', "TEXT DEFAULT ''"], ['current_work_process', "TEXT DEFAULT ''"], ['meltdown_timer', 'INTEGER DEFAULT 0'],
-  ['meltdown_state', "TEXT DEFAULT 'stable'"]
+  ['meltdown_state', "TEXT DEFAULT 'stable'"], ['sector', "TEXT DEFAULT 'control'"], ['observation_level', 'INTEGER DEFAULT 0'],
+  ['research_points', 'INTEGER DEFAULT 0']
 ] as const) addColumnIfMissing('abnormalities', column, definition);
+
+db.query(`
+  CREATE TABLE IF NOT EXISTS ego_equipment (
+    id TEXT PRIMARY KEY,
+    guild_id TEXT DEFAULT '',
+    category TEXT DEFAULT 'weapon',
+    name TEXT,
+    damage_type TEXT,
+    min_damage INTEGER DEFAULT 0,
+    max_damage INTEGER DEFAULT 0,
+    speed REAL DEFAULT 1.0,
+    red REAL DEFAULT 1.0,
+    white REAL DEFAULT 1.0,
+    black REAL DEFAULT 1.0,
+    pale REAL DEFAULT 1.0,
+    defense INTEGER DEFAULT 0,
+    description TEXT DEFAULT '',
+    rarity TEXT DEFAULT 'common'
+  )
+`).run();
+
+for (const item of EGO_EQUIPMENT_SEED) {
+  db.query(`INSERT OR IGNORE INTO ego_equipment (id, guild_id, category, name, damage_type, min_damage, max_damage, speed, red, white, black, pale, defense, description, rarity)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(item.id, '', item.category, item.name, item.type ?? 'RED', item.min ?? 0, item.max ?? 0, item.speed ?? 1.0, item.red ?? 1.0, item.white ?? 1.0, item.black ?? 1.0, item.pale ?? 1.0, item.defense ?? 0, item.description, 'common');
+}
 
 db.query(`
   CREATE TABLE IF NOT EXISTS save_files (
@@ -385,6 +556,53 @@ db.query(`
     type TEXT,
     message TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`).run();
+
+db.query(`
+  CREATE TABLE IF NOT EXISTS codex_entries (
+    guild_id TEXT,
+    abnormality_name TEXT,
+    observation_level INTEGER DEFAULT 0,
+    data_json TEXT DEFAULT '{}',
+    unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (guild_id, abnormality_name)
+  )
+`).run();
+
+db.query(`
+  CREATE TABLE IF NOT EXISTS memory_checkpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    day_count INTEGER,
+    energy INTEGER,
+    quota INTEGER,
+    facility_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`).run();
+
+db.query(`
+  CREATE TABLE IF NOT EXISTS ordeal_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    color TEXT,
+    threshold INTEGER,
+    active INTEGER DEFAULT 0,
+    expires_at INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`).run();
+
+db.query(`
+  CREATE TABLE IF NOT EXISTS department_quests (
+    guild_id TEXT,
+    department TEXT,
+    description TEXT,
+    goal TEXT,
+    progress INTEGER DEFAULT 0,
+    complete INTEGER DEFAULT 0,
+    PRIMARY KEY (guild_id, department, goal)
   )
 `).run();
 
@@ -554,7 +772,67 @@ function ensureFacility(guildId: string, managerId: string) {
     db.query(`UPDATE facility SET manager_id = ? WHERE guild_id = ?`).run(managerId, guildId);
     facility.manager_id = managerId;
   }
+  if (facility.department_unlocks == null || facility.department_unlocks === '') {
+    db.query(`UPDATE facility SET department_unlocks=? WHERE guild_id=?`).run(json(['control']), guildId);
+    facility.department_unlocks = json(['control']);
+  }
+  if (facility.meltdown_targets == null || facility.meltdown_targets === '') {
+    db.query(`UPDATE facility SET meltdown_targets='[]' WHERE guild_id=?`).run(guildId);
+    facility.meltdown_targets = '[]';
+  }
+  if (facility.ordeal_active == null) {
+    db.query(`UPDATE facility SET ordeal_active=0, active_ordeal='', ordeal_timer=0 WHERE guild_id=?`).run(guildId);
+    facility.ordeal_active = 0;
+    facility.active_ordeal = '';
+    facility.ordeal_timer = 0;
+  }
   return facility;
+}
+
+function createMemoryCheckpoint(guildId: string, facility: any) {
+  const snapshot = serializeFacility(guildId);
+  db.query(`INSERT INTO memory_checkpoints (guild_id, day_count, energy, quota, facility_json) VALUES (?, ?, ?, ?, ?)`).run(
+    guildId, facility.day_count, facility.energy, facility.quota, json(snapshot)
+  );
+  return true;
+}
+
+function maybeUnlockCodexEntry(guildId: string, abno: any, level: number) {
+  const entry = db.query(`SELECT * FROM codex_entries WHERE guild_id=? AND abnormality_name=?`).get(guildId, abno.name) as any;
+  const current = Number(entry?.observation_level ?? 0);
+  if (level <= current) return;
+  db.query(`INSERT INTO codex_entries (guild_id, abnormality_name, observation_level, data_json) VALUES (?, ?, ?, ?) ON CONFLICT(guild_id, abnormality_name) DO UPDATE SET observation_level=excluded.observation_level, data_json=excluded.data_json`).run(
+    guildId,
+    abno.name,
+    level,
+    json({ risk: abno.risk, damage_type: abno.damage_type, qliphoth: abno.max_qliphoth, sector: abno.sector ?? 'control' })
+  );
+}
+
+function maybeTriggerOrdeal(guildId: string, facility: any) {
+  if (!facility || facility.ordeal_active) return false;
+  for (const stage of ORDEAL_STAGES) {
+    if (Number(facility.energy) >= stage.threshold) {
+      const color = stage.color;
+      const expiresAt = Date.now() + 60000;
+      db.query(`UPDATE facility SET ordeal_active=1, active_ordeal=?, ordeal_timer=? WHERE guild_id=?`).run(color, expiresAt, guildId);
+      db.query(`INSERT INTO ordeal_events (guild_id, color, threshold, active, expires_at) VALUES (?, ?, ?, 1, ?)`).run(guildId, color, stage.threshold, expiresAt);
+      logEvent(guildId, facility.day_count, facility.phase, 'ordeal', `${stage.label} triggered: ${color.toUpperCase()} invaders are active in the facility.`);
+      return true;
+    }
+  }
+  return false;
+}
+
+function resolvePanicBehavior(agent: any): string {
+  if (!agent || agent.sp > 0) return 'stable';
+  const highestStat = Object.entries({ fortitude: agent.fortitude, prudence: agent.prudence, temperance: agent.temperance, justice: agent.justice })
+    .sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'fortitude';
+
+  if (highestStat === 'fortitude') return 'wanders containment hallways and opens doors';
+  if (highestStat === 'prudence') return 'tries to breach the nearest high-risk abnormality';
+  if (highestStat === 'temperance') return 'refuses commands and locks down department operations';
+  return 'becomes hostile to nearby agents';
 }
 
 function seedAbnormalities(guildId: string) {
@@ -598,6 +876,93 @@ function getMeltdownState(abno: any) {
     return { icon: '🟡', label: 'unstable', timer: Math.max(0, Number(abno.meltdown_timer ?? 0)), value: ratio };
   }
   return { icon: '🟢', label: 'stable', timer: Math.max(0, Number(abno.meltdown_timer ?? 0)), value: ratio };
+}
+
+const DEPARTMENT_META: Record<string, { label: string; requirement: number; bonus: string }> = {
+  control: { label: 'Control', requirement: 2, bonus: '+4% work consistency' },
+  information: { label: 'Information', requirement: 3, bonus: 'shows exact work odds' },
+  security: { label: 'Security', requirement: 4, bonus: '+10% HP/SP recovery' },
+  training: { label: 'Training', requirement: 5, bonus: '+1 training yield per day' },
+  command: { label: 'Central Command', requirement: 6, bonus: 'global command routing' }
+};
+
+function getUnlockedDepartments(facility: any): string[] {
+  try {
+    const raw = JSON.parse(facility?.department_unlocks || '[]');
+    return Array.isArray(raw) ? raw as string[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function isDepartmentUnlocked(facility: any, department: string) {
+  return getUnlockedDepartments(facility).includes(department);
+}
+
+function getDepartmentBonus(facility: any, type: 'security' | 'information' | 'control' | 'training' | 'command') {
+  const unlocked = getUnlockedDepartments(facility);
+  if (type === 'security' && unlocked.includes('security')) return 0.10;
+  if (type === 'information' && unlocked.includes('information')) return 0.08;
+  if (type === 'control' && unlocked.includes('control')) return 0.04;
+  if (type === 'training' && unlocked.includes('training')) return 0.05;
+  if (type === 'command' && unlocked.includes('command')) return 0.06;
+  return 0;
+}
+
+function triggerMeltdownAlarm(guildId: string, facility: any) {
+  if (!facility || facility.meltdown_alarm) return false;
+  const abnormalities = db.query(`SELECT * FROM abnormalities WHERE guild_id = ? AND is_breaching = 0 ORDER BY id`).all(guildId) as any[];
+  if (!abnormalities.length) return false;
+
+  const targetCount = 1 + Math.min(2, Math.floor(Math.random() * 3));
+  const targets = [...abnormalities].sort(() => Math.random() - 0.5).slice(0, targetCount);
+  for (const abno of targets) {
+    abno.meltdown_timer = 30 + rand(10, 40);
+    abno.meltdown_state = 'alarm';
+    db.query(`UPDATE abnormalities SET meltdown_timer=?, meltdown_state=? WHERE id=?`).run(abno.meltdown_timer, abno.meltdown_state, abno.id);
+  }
+
+  db.query(`UPDATE facility SET meltdown_alarm=1, meltdown_targets=? WHERE guild_id=?`).run(json(targets.map(a => a.id)), guildId);
+  logEvent(guildId, facility.day_count, facility.phase, 'meltdown_alarm', `Meltdown alarm triggered. Containment timers assigned: ${targets.map(a => a.name).join(', ')}.`);
+  return true;
+}
+
+function resolveMeltdownTimers(guildId: string, facility: any) {
+  if (!facility || !facility.meltdown_alarm) return;
+  const targets = JSON.parse(facility.meltdown_targets || '[]') as number[];
+  if (!targets.length) {
+    db.query(`UPDATE facility SET meltdown_alarm=0, meltdown_targets='[]' WHERE guild_id=?`).run(guildId);
+    return;
+  }
+
+  let activeTargets: number[] = [];
+  for (const id of targets) {
+    const abno = db.query(`SELECT * FROM abnormalities WHERE id = ? AND guild_id = ?`).get(id, guildId) as any;
+    if (!abno) continue;
+    if (!abno.is_breaching) {
+      const nextTimer = Number(abno.meltdown_timer ?? 0) - 1;
+      abno.meltdown_timer = nextTimer;
+      if (nextTimer <= 0) {
+        abno.qliphoth = 0;
+        abno.is_breaching = 1;
+        abno.breaches += 1;
+        abno.rage = Math.min(10, abno.rage + 2);
+        abno.meltdown_state = 'breach';
+        logEvent(guildId, facility.day_count, facility.phase, 'meltdown', `${abno.name} missed the timer and breached instantly.`);
+        sendBreachAlert({ guild: { channels: { cache: new Map() } } }, facility, abno).catch(() => {});
+      }
+      db.query(`UPDATE abnormalities SET qliphoth=?, is_breaching=?, breaches=?, meltdown_timer=?, meltdown_state=? WHERE id=?`).run(
+        abno.qliphoth, abno.is_breaching, abno.breaches, abno.meltdown_timer, abno.meltdown_state, abno.id
+      );
+      if (abno.meltdown_timer > 0) activeTargets.push(abno.id);
+    }
+  }
+
+  if (!activeTargets.length) {
+    db.query(`UPDATE facility SET meltdown_alarm=0, meltdown_targets='[]' WHERE guild_id=?`).run(guildId);
+  } else {
+    db.query(`UPDATE facility SET meltdown_targets=? WHERE guild_id=?`).run(json(activeTargets), guildId);
+  }
 }
 
 function formatMeltdownTimer(abno: any) {
@@ -650,6 +1015,9 @@ function calculateWorkChance(agent: any, abno: any, workType: WorkType, facility
   const gift = getGift(agent);
   if (gift?.workChanceBonus?.[workType]) chance += gift.workChanceBonus[workType]!;
 
+  if (facility?.meltdown_alarm) chance -= 0.04;
+  chance += getDepartmentBonus(facility, 'control') + getDepartmentBonus(facility, 'information');
+
   return clamp(chance, 0.05, 0.97);
 }
 
@@ -678,6 +1046,28 @@ function renderPEProgress(positive: number, negative: number, total = 12) {
   for (let i = 0; i < neg; i++) cells[safeTotal - 1 - i] = '🟥';
 
   return cells.join('');
+}
+
+function buildPEVisualString(positive: number, negative: number, total = 12) {
+  const safeTotal = Math.max(1, total);
+  const peRolls = clamp(Math.max(0, Math.floor(positive)), 0, safeTotal);
+  const negativeRolls = clamp(Math.max(0, Math.floor(negative)), 0, safeTotal);
+  const boxIcons: string[] = [];
+
+  for (let i = 0; i < peRolls; i++) {
+    boxIcons.push('🟩 PE');
+  }
+
+  for (let i = 0; i < negativeRolls; i++) {
+    boxIcons.push('💔 NE');
+  }
+
+  const remaining = Math.max(0, safeTotal - (peRolls + negativeRolls));
+  for (let i = 0; i < remaining; i++) {
+    boxIcons.push('⬜');
+  }
+
+  return boxIcons.join(' · ');
 }
 
 function formatWorkDamageTag(baseDamage: number, actualDamage: number, type: string, guild: any) {
@@ -712,7 +1102,8 @@ async function sendBreachAlert(interaction: any, facility: any, abno: any) {
     );
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(`suppress_${abno.id}`).setLabel('⚔️ SUPPRESS').setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId(`suppress_confirm_${abno.id}`).setLabel('⚔️ SUPPRESS').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`suppress_retreat_${abno.id}`).setLabel('🏃 RETREAT').setStyle(ButtonStyle.Secondary)
   );
 
   await containCh.send({ content: '@everyone', embeds: [breachEmbed], components: [row] });
@@ -853,6 +1244,12 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   abno.meltdown_timer = Math.max(15, 45 - (abno.max_qliphoth - abno.qliphoth) * 8 + abno.rage * 3);
   abno.meltdown_state = getMeltdownState(abno).label;
 
+  if (agent.assignments > 0 && agent.assignments % 5 === 0) {
+    triggerMeltdownAlarm(interaction.guildId!, facility);
+  }
+
+  resolveMeltdownTimers(interaction.guildId!, db.query(`SELECT * FROM facility WHERE guild_id=?`).get(interaction.guildId!) as any);
+
   const liveProgress = async () => {
     const revealOrder: Array<'positive' | 'negative'> = [];
     for (let i = 0; i < positiveGoal; i++) revealOrder.push('positive');
@@ -887,9 +1284,10 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
       }
 
       const progressBar = renderPEProgress(revealedPositive, revealedNegative, totalMeter);
+      const boxVisual = buildPEVisualString(revealedPositive, revealedNegative, totalMeter);
       const hpText = `❤️ ${agent.hp}/${agent.max_hp} · 🧠 ${agent.sp}/${agent.max_sp}`;
       const workEmoji = getGuildEmojiString(interaction.guild, WORK_TYPES[workType].icon, WORK_TYPES[workType].label);
-      const liveText = `🧪 **${abno.name}** — ${workEmoji} **${WORK_TYPES[workType].label}**\n${progressBar}\n${hpText}\n⚔️ ${lastDamageText}`;
+      const liveText = `🧪 **${abno.name}** — ${workEmoji} **${WORK_TYPES[workType].label}**\n${progressBar}\n${boxVisual}\n${hpText}\n⚔️ ${lastDamageText}`;
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ content: liveText, components: [] });
@@ -922,6 +1320,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
 
   const bInfo = BEHAVIOUR_INFO[behaviour];
   const workEmoji = getGuildEmojiString(interaction.guild, WORK_TYPES[workType].icon, WORK_TYPES[workType].label);
+  const qliphothIcon = abno.qliphoth === abno.max_qliphoth ? '💎' : '🔻';
   let resultText = `🧪 you performed **${work.label}** work (level **${level}/${maxLevel}**) on **${abno.name}**.\n`;
   resultText += `${bInfo.icon} behaviour: **${bInfo.label}**\n`;
   resultText += `🧩 active work process: **${workEmoji} ${WORK_TYPES[workType].label}**\n`;
@@ -931,7 +1330,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   resultText += `⚡ generated **${energyGain} energy** from **${peBoxes} PE boxes**\n`;
   resultText += `💥 suffered **${totalDamage} ${abno.damage_type} damage** (including **${workResult.liveDamageTotal}** from **${negativeGoal}** negative box(es))\n`;
   resultText += `🧠 gained **${expGain} EXP**\n`;
-  resultText += `🔻 qliphoth: **${abno.qliphoth}/${abno.max_qliphoth}**\n`;
+  resultText += `${qliphothIcon} qliphoth: **${abno.qliphoth}/${abno.max_qliphoth}**\n`;
   resultText += `🛡️ ${agent.hp}/${agent.max_hp} HP | ${agent.sp}/${agent.max_sp} SP\n`;
   resultText += `📝 ${tickResults.join(' · ')}`;
 
@@ -1510,6 +1909,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
         const slot = interaction.options.getString('slot', true).trim();
         if (!slot) return interaction.reply({ content: 'give the save a name!', ephemeral: true });
+
+        const existing = db.query(`SELECT * FROM save_files WHERE save_name=? AND guild_id=?`).get(slot, guildId) as any | null;
+        const countRow = db.query(`SELECT COUNT(*) AS count FROM save_files WHERE guild_id=?`).get(guildId) as { count?: number } | null;
+        const count = Number(countRow?.count ?? 0);
+        if (!existing && count >= MAX_SAVE_SLOTS) {
+          return interaction.reply({ content: `⚠️ this server has reached the save cap (**${MAX_SAVE_SLOTS}**). delete one before creating a new slot.`, ephemeral: true });
+        }
+
         const state = serializeFacility(guildId);
         db.query(`
           INSERT OR REPLACE INTO save_files (save_name, guild_id, state_json, day_count, energy, quota, dictator_mode)
@@ -1606,8 +2013,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return executeWork(interaction, agent, abno, workType, facility, level);
       }
 
-      if (interaction.customId.startsWith('suppress_')) {
-        const abnoId = interaction.customId.split('_')[1] ?? '';
+      if (interaction.customId.startsWith('suppress_retreat_')) {
+        const abnoId = interaction.customId.replace('suppress_retreat_', '');
+        const agent = findAgent(interaction.user.id, guildId);
+        if (agent) {
+          agent.status = 'idle';
+          updateAgent(agent);
+        }
+        await interaction.update({ content: `🏃 **${interaction.user.username} retreated from the breach.** the abnormality remains active.`, components: [] });
+        return;
+      }
+
+      if (interaction.customId.startsWith('suppress_confirm_')) {
+        const abnoId = interaction.customId.replace('suppress_confirm_', '');
         const agent = findAgent(interaction.user.id, guildId);
         const abno = abnoId ? db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnoId, guildId) as any : null;
         if (!agent) return interaction.reply({ content: 'you need to `/join` first!', ephemeral: true });
@@ -1616,6 +2034,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.reply({ content: `you are ${agent.status} and cannot fight!`, ephemeral: true });
         }
         if (!abno.is_breaching) return interaction.reply({ content: 'that abnormality is not currently breaching.', ephemeral: true });
+
+        const cooldownKey = `${guildId}:${agent.discord_id}:${abno.id}`;
+        const now = Date.now();
+        const cooldownUntil = SUPPRESSION_COOLDOWNS.get(cooldownKey) ?? 0;
+        if (now < cooldownUntil) {
+          return interaction.reply({ content: '⏳ the breach is still resolving. wait a moment before attacking again.', ephemeral: true });
+        }
+        SUPPRESSION_COOLDOWNS.set(cooldownKey, now + 1200);
 
         const behaviour = getBehaviour(abno);
         const weapon = getWeapon(agent)!;
@@ -1657,7 +2083,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const riskWeight = RISK_VALUES[String(abno.risk)] ?? 1;
           const expMessages = awardExperience(agent, 12 + riskWeight * 8);
 
-          // suppressing a breach is the only moment an E.G.O. gift can surface
           let giftLog = '';
           if (abno.gift_id && EGO_GIFTS[abno.gift_id]) {
             const owned = JSON.parse(agent.ego_gifts || '[]') as string[];
@@ -1672,23 +2097,140 @@ client.on(Events.InteractionCreate, async (interaction) => {
             }
           }
 
-          updateAgent(agent);
-          db.query(`UPDATE abnormalities SET hp=?, is_breaching=0, qliphoth=?, rage=?, suppressed_count=? WHERE id=?`)
-            .run(abno.hp, abno.qliphoth, abno.rage, abno.suppressed_count, abno.id);
+          const tx = db.transaction(() => {
+            updateAgent(agent);
+            db.query(`UPDATE abnormalities SET hp=?, is_breaching=0, qliphoth=?, rage=?, suppressed_count=? WHERE id=?`).run(abno.hp, abno.qliphoth, abno.rage, abno.suppressed_count, abno.id);
+          });
+          tx();
+
           logEvent(guildId, facility.day_count, facility.phase, 'suppression', `${agent.name} suppressed ${abno.name}.`);
           combatLog += `\n\n🎉 **${abno.name.toUpperCase()} HAS BEEN SUPPRESSED!** it has returned to containment.`;
           if (expMessages.length) combatLog += `\n${expMessages.join('\n')}`;
           if (giftLog) combatLog += giftLog;
           await interaction.update({ content: combatLog, components: [] });
         } else {
-          updateAgent(agent);
-          db.query(`UPDATE abnormalities SET hp=? WHERE id=?`).run(abno.hp, abno.id);
+          const tx = db.transaction(() => {
+            updateAgent(agent);
+            db.query(`UPDATE abnormalities SET hp=? WHERE id=?`).run(abno.hp, abno.id);
+          });
+          tx();
+
           const oldEmbed = interaction.message.embeds[0];
           const newEmbed = oldEmbed
             ? EmbedBuilder.from(oldEmbed).setDescription(`risk: ${abno.risk}\nHP: ${abno.hp}/${abno.max_hp}\n\n${combatLog}`)
             : new EmbedBuilder().setTitle(`🚨 ${abno.name}`).setDescription(combatLog).setColor(0xFF0000);
           await interaction.update({ embeds: [newEmbed], content: '', components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder().setCustomId(`suppress_${abno.id}`).setLabel('⚔️ SUPPRESS').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId(`suppress_confirm_${abno.id}`).setLabel('⚔️ SUPPRESS').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`suppress_retreat_${abno.id}`).setLabel('🏃 RETREAT').setStyle(ButtonStyle.Secondary)
+          )] });
+        }
+        return;
+      }
+
+      if (interaction.customId.startsWith('suppress_')) {
+        const abnoId = interaction.customId.split('_')[1] ?? '';
+        const agent = findAgent(interaction.user.id, guildId);
+        const abno = abnoId ? db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnoId, guildId) as any : null;
+        if (!agent) return interaction.reply({ content: 'you need to `/join` first!', ephemeral: true });
+        if (!abno) return interaction.reply({ content: 'that abnormality does not exist!', ephemeral: true });
+        if (agent.status === 'dead' || agent.status === 'panicked' || agent.status === 'traumatized') {
+          return interaction.reply({ content: `you are ${agent.status} and cannot fight!`, ephemeral: true });
+        }
+        if (!abno.is_breaching) return interaction.reply({ content: 'that abnormality is not currently breaching.', ephemeral: true });
+        if (isCriticallyLow(agent)) {
+          return interaction.reply({
+            content: `⚠️ **${agent.name} is critically low** — **HP ${agent.hp}/${agent.max_hp}** and **SP ${agent.sp}/${agent.max_sp}**. retreat or continue anyway?`,
+            components: [buildCombatWarningRow(abno.id)],
+            ephemeral: true
+          });
+        }
+
+        const cooldownKey = `${guildId}:${agent.discord_id}:${abno.id}`;
+        const now = Date.now();
+        const cooldownUntil = SUPPRESSION_COOLDOWNS.get(cooldownKey) ?? 0;
+        if (now < cooldownUntil) {
+          return interaction.reply({ content: '⏳ the breach is still resolving. wait a moment before attacking again.', ephemeral: true });
+        }
+        SUPPRESSION_COOLDOWNS.set(cooldownKey, now + 1200);
+
+        const behaviour = getBehaviour(abno);
+        const weapon = getWeapon(agent)!;
+        const facilitySecurity = Number(facility.security_level);
+        let agentDamage = rand(weapon.min, weapon.max);
+        agentDamage = Math.floor(agentDamage * (1 + getEffectiveStat(agent, 'justice') * 0.04) * weapon.speed);
+        if (agent.trait === 'reckless') agentDamage = Math.floor(agentDamage * 1.15);
+        agentDamage += facilitySecurity;
+
+        let incomingMultiplier = 2;
+        if (behaviour === 'docile') incomingMultiplier *= 0.85;
+        if (behaviour === 'volatile') incomingMultiplier *= (0.8 + Math.random() * 0.5);
+        if (behaviour === 'predatory' && (agent.hp < agent.max_hp * 0.4 || agent.sp < agent.max_sp * 0.4)) incomingMultiplier *= 1.4;
+
+        const incoming = applyDamage(agent, abno.damage_amt * incomingMultiplier, abno.damage_type);
+        abno.hp -= agentDamage;
+        agent.assignments += 1;
+
+        const bInfo = BEHAVIOUR_INFO[behaviour];
+        let combatLog = `⚔️ **${agent.name}** attacked with **${weapon.name}** for **${agentDamage} ${weapon.type} damage**.\n`;
+        combatLog += `${bInfo.icon} **${abno.name}** (${bInfo.label}) retaliated for **${incoming} ${abno.damage_type} damage**.\n`;
+        combatLog += `❤️ ${agent.hp}/${agent.max_hp} HP · 🧠 ${agent.sp}/${agent.max_sp} SP`;
+
+        if (agent.status === 'dead') {
+          combatLog += `\n💀 **${agent.name} has died in combat.**`;
+          logEvent(guildId, facility.day_count, facility.phase, 'death', `${agent.name} died while suppressing ${abno.name}.`);
+        } else if (agent.status === 'panicked') {
+          combatLog += `\n😵 **${agent.name} has panicked during combat.**`;
+        }
+
+        if (abno.hp <= 0) {
+          abno.hp = abno.max_hp;
+          abno.is_breaching = 0;
+          abno.qliphoth = abno.max_qliphoth;
+          abno.rage = Math.max(0, abno.rage - 3);
+          abno.suppressed_count += 1;
+          agent.kills += 1;
+          const riskWeight = RISK_VALUES[String(abno.risk)] ?? 1;
+          const expMessages = awardExperience(agent, 12 + riskWeight * 8);
+
+          let giftLog = '';
+          if (abno.gift_id && EGO_GIFTS[abno.gift_id]) {
+            const owned = JSON.parse(agent.ego_gifts || '[]') as string[];
+            if (!owned.includes(abno.gift_id)) {
+              const dropChance = clamp(0.15 + riskWeight * 0.05, 0, 0.55);
+              if (Math.random() < dropChance) {
+                owned.push(abno.gift_id);
+                agent.ego_gifts = json(owned);
+                const gift = EGO_GIFTS[abno.gift_id] as GiftDef;
+                giftLog = `\n\n💠 **E.G.O. GIFT ACQUIRED: ${gift.icon} ${gift.name}!**\n${gift.drawback}\nequip it any time with \`/equip-gift ${gift.name}\`.`;
+              }
+            }
+          }
+
+          const tx = db.transaction(() => {
+            updateAgent(agent);
+            db.query(`UPDATE abnormalities SET hp=?, is_breaching=0, qliphoth=?, rage=?, suppressed_count=? WHERE id=?`).run(abno.hp, abno.qliphoth, abno.rage, abno.suppressed_count, abno.id);
+          });
+          tx();
+
+          logEvent(guildId, facility.day_count, facility.phase, 'suppression', `${agent.name} suppressed ${abno.name}.`);
+          combatLog += `\n\n🎉 **${abno.name.toUpperCase()} HAS BEEN SUPPRESSED!** it has returned to containment.`;
+          if (expMessages.length) combatLog += `\n${expMessages.join('\n')}`;
+          if (giftLog) combatLog += giftLog;
+          await interaction.update({ content: combatLog, components: [] });
+        } else {
+          const tx = db.transaction(() => {
+            updateAgent(agent);
+            db.query(`UPDATE abnormalities SET hp=? WHERE id=?`).run(abno.hp, abno.id);
+          });
+          tx();
+
+          const oldEmbed = interaction.message.embeds[0];
+          const newEmbed = oldEmbed
+            ? EmbedBuilder.from(oldEmbed).setDescription(`risk: ${abno.risk}\nHP: ${abno.hp}/${abno.max_hp}\n\n${combatLog}`)
+            : new EmbedBuilder().setTitle(`🚨 ${abno.name}`).setDescription(combatLog).setColor(0xFF0000);
+          await interaction.update({ embeds: [newEmbed], content: '', components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId(`suppress_confirm_${abno.id}`).setLabel('⚔️ SUPPRESS').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`suppress_retreat_${abno.id}`).setLabel('🏃 RETREAT').setStyle(ButtonStyle.Secondary)
           )] });
         }
       }
