@@ -98,6 +98,27 @@ const commands = [
     .setDescription('view the facility incident history!'),
 
   new SlashCommandBuilder()
+    .setName('departments')
+    .setDescription('view department routes and unlock progress!'),
+
+  new SlashCommandBuilder()
+    .setName('travel')
+    .setDescription('move to an unlocked department sector!')
+    .addStringOption(opt =>
+      opt
+        .setName('department')
+        .setDescription('department to move to')
+        .addChoices(
+          { name: 'Control', value: 'control' },
+          { name: 'Information', value: 'information' },
+          { name: 'Security', value: 'security' },
+          { name: 'Training', value: 'training' },
+          { name: 'Central Command', value: 'command' }
+        )
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
     .setName('train')
     .setDescription('manager only: train an agent using facility resources!')
     .addUserOption(opt =>
@@ -131,7 +152,11 @@ const commands = [
     .setDescription('manager only: load a saved facility state!')
     .addStringOption(opt =>
       opt.setName('slot').setDescription('name of the save slot to load').setRequired(true)
-    )
+    ),
+
+  new SlashCommandBuilder()
+    .setName('rewind')
+    .setDescription('manager only: rewind the facility to the latest memory checkpoint!')
 ].map(cmd => cmd.toJSON());
 
 const token = process.env.DISCORD_TOKEN;
