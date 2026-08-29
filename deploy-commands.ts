@@ -41,6 +41,28 @@ const commands = [
           { name: '⚙️ repression', value: 'repression' }
         )
         .setRequired(false)
+    )
+    .addIntegerOption(opt =>
+      opt
+        .setName('level')
+        .setDescription('work level, 1-4 — higher is riskier but pays out more (leave blank to choose with buttons)')
+        .setMinValue(1)
+        .setMaxValue(4)
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('gifts')
+    .setDescription('view your E.G.O. gift collection! 💠'),
+
+  new SlashCommandBuilder()
+    .setName('equip-gift')
+    .setDescription('equip (or unequip) an E.G.O. gift you own! 💠')
+    .addStringOption(opt =>
+      opt
+        .setName('gift')
+        .setDescription('gift name to equip, or "none" to unequip')
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()

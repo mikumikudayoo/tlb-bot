@@ -27,6 +27,46 @@ type WorkType = 'instinct' | 'insight' | 'attachment' | 'repression';
 type StatName = 'fortitude' | 'prudence' | 'temperance' | 'justice';
 type AgentStatus = 'idle' | 'working' | 'injured' | 'stressed' | 'panicked' | 'traumatized' | 'recovering' | 'dead';
 type UpgradeType = 'containment' | 'research' | 'security' | 'welfare';
+type Behaviour = 'docile' | 'possessive' | 'volatile' | 'predatory';
+
+// Higher-risk containment can be pushed to deeper (riskier, higher-yield) work levels.
+const WORK_LEVEL_MAX: Record<string, number> = {
+  ZAYIN: 2,
+  TETH: 3,
+  HE: 4,
+  WAW: 4,
+  ALEPH: 4
+};
+
+// Behaviour is no longer flavor text — it changes how an abnormality reacts to
+// being worked, how it fights when it breaches, and how likely it is to escape
+// containment on its own.
+const BEHAVIOUR_INFO: Record<Behaviour, { icon: string; label: string; description: string }> = {
+  docile: {
+    icon: '🕊️',
+    label: 'docile',
+    description: 'calm and cooperative. rewards patient, consistent handling and rarely escalates on its own.'
+  },
+  possessive: {
+    icon: '💜',
+    label: 'possessive',
+    description: 'bonds to whoever works it most. grows fonder of a familiar face and resents being handed off.'
+  },
+  volatile: {
+    icon: '🌪️',
+    label: 'volatile',
+    description: 'unstable. swings hard between brilliant and disastrous work sessions, and breaches without warning.'
+  },
+  predatory: {
+    icon: '🦈',
+    label: 'predatory',
+    description: 'preys on weakness. grows bolder — and more dangerous — the worse shape its handler is in.'
+  }
+};
+
+function getBehaviour(abno: any): Behaviour {
+  return (BEHAVIOUR_INFO as any)[abno.behaviour] ? (abno.behaviour as Behaviour) : 'docile';
+}
 
 const WORK_TYPES: Record<WorkType, { stat: StatName; icon: string; label: string }> = {
   instinct: { stat: 'fortitude', icon: '❤️', label: 'instinct' },
@@ -65,28 +105,68 @@ const TRAITS: Record<string, { name: string; description: string }> = {
   curious: { name: 'curious', description: '+10% insight success' }
 };
 
+// Each E.G.O. gift is a real trade: a stat payoff, and a drawback that's felt
+// every single work/combat resolution while it's equipped. Nothing is free.
+type GiftDef = {
+  id: string; name: string; icon: string; sourceAbno: string; drawback: string;
+  statBonus?: Partial<Record<StatName, number>>;
+  workChanceBonus?: Partial<Record<WorkType, number>>;
+  incomingDamageMult?: number;
+  maxSpMult?: number;
+};
+
 const ABNORMALITY_TEMPLATES = [
   {
     name: 'One Sin and Hundreds of Good Deeds', risk: 'ZAYIN', hp: 500, qliphoth: 3, damage_type: 'WHITE', damage_amt: 2,
     instinct: 0.35, insight: 0.80, attachment: 0.60, repression: 0.20, escape_chance: 0.03,
-    behaviour: 'docile', description: 'A relatively safe abnormality that rewards patient observation.'
+    behaviour: 'docile', description: 'A relatively safe abnormality that rewards patient observation.',
+    gift: {
+      id: 'unwavering_gaze', name: 'Unwavering Gaze', icon: '👁️',
+      statBonus: { prudence: 2 },
+      workChanceBonus: { instinct: -0.08 },
+      drawback: '+2 prudence, but -8% instinct work chance — the gaze fixes on truth and stops noticing danger.'
+    } as Omit<GiftDef, 'sourceAbno'>
   },
   {
     name: 'Beauty and the Beast', risk: 'TETH', hp: 800, qliphoth: 3, damage_type: 'BLACK', damage_amt: 6,
     instinct: 0.45, insight: 0.40, attachment: 0.90, repression: 0.20, escape_chance: 0.10,
-    behaviour: 'possessive', description: 'Responds well to attachment but becomes volatile when mishandled.'
+    behaviour: 'possessive', description: 'Responds well to attachment but becomes volatile when mishandled.',
+    gift: {
+      id: 'beasts_embrace', name: "Beast's Embrace", icon: '💗',
+      statBonus: { temperance: 2 },
+      maxSpMult: 0.90,
+      drawback: '+2 temperance, but -10% max SP — the embrace is warm and it does not let go easily.'
+    } as Omit<GiftDef, 'sourceAbno'>
   },
   {
     name: 'Der Freischütz', risk: 'HE', hp: 1500, qliphoth: 3, damage_type: 'BLACK', damage_amt: 12,
     instinct: 0.30, insight: 0.55, attachment: 0.35, repression: 0.85, escape_chance: 0.16,
-    behaviour: 'volatile', description: 'High output, high risk. Mistakes can destabilise containment quickly.'
+    behaviour: 'volatile', description: 'High output, high risk. Mistakes can destabilise containment quickly.',
+    gift: {
+      id: 'true_shot', name: 'True Shot', icon: '🎯',
+      statBonus: { justice: 2 },
+      incomingDamageMult: 1.15,
+      drawback: '+2 justice, but +15% incoming damage — a perfect shot leaves you standing in the open.'
+    } as Omit<GiftDef, 'sourceAbno'>
   },
   {
     name: 'Nothing There', risk: 'ALEPH', hp: 3000, qliphoth: 2, damage_type: 'RED', damage_amt: 30,
     instinct: 0.55, insight: 0.35, attachment: 0.20, repression: 0.95, escape_chance: 0.30,
-    behaviour: 'predatory', description: 'An ALEPH-class threat capable of rapidly turning errors into disasters.'
+    behaviour: 'predatory', description: 'An ALEPH-class threat capable of rapidly turning errors into disasters.',
+    gift: {
+      id: 'vacant_resonance', name: 'Vacant Resonance', icon: '🕳️',
+      statBonus: { fortitude: 1, prudence: 1, temperance: 1, justice: 1 },
+      incomingDamageMult: 1.10,
+      drawback: '+1 to every stat, but +10% incoming damage from all sources — it does not distinguish friend from foe.'
+    } as Omit<GiftDef, 'sourceAbno'>
   }
 ];
+
+const EGO_GIFTS: Record<string, GiftDef> = {};
+for (const template of ABNORMALITY_TEMPLATES) {
+  const g = (template as any).gift as Omit<GiftDef, 'sourceAbno'> | undefined;
+  if (g) EGO_GIFTS[g.id] = { ...g, sourceAbno: template.name };
+}
 
 // ==========================================
 // 🗃️ DATABASE SCHEMA + LIGHTWEIGHT MIGRATIONS
@@ -183,7 +263,8 @@ for (const [column, definition] of [
   ['level', 'INTEGER DEFAULT 1'], ['fortitude', 'INTEGER DEFAULT 1'], ['prudence', 'INTEGER DEFAULT 1'],
   ['temperance', 'INTEGER DEFAULT 1'], ['justice', 'INTEGER DEFAULT 1'], ['experience', 'INTEGER DEFAULT 0'],
   ['trait', "TEXT DEFAULT 'calm'"], ['recovery_days', 'INTEGER DEFAULT 0'], ['assignments', 'INTEGER DEFAULT 0'],
-  ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0']
+  ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'],
+  ['ego_gifts', "TEXT DEFAULT '[]'"], ['equipped_gift', "TEXT DEFAULT ''"]
 ] as const) addColumnIfMissing('agents', column, definition);
 
 db.query(`
@@ -245,7 +326,8 @@ for (const [column, definition] of [
   ['work_instinct', 'REAL DEFAULT 0.5'], ['work_insight', 'REAL DEFAULT 0.5'], ['work_attachment', 'REAL DEFAULT 0.5'],
   ['work_repression', 'REAL DEFAULT 0.5'], ['escape_chance', 'REAL DEFAULT 0.0'], ['behaviour', "TEXT DEFAULT 'docile'"],
   ['description', "TEXT DEFAULT ''"], ['rage', 'INTEGER DEFAULT 0'], ['breaches', 'INTEGER DEFAULT 0'],
-  ['suppressed_count', 'INTEGER DEFAULT 0']
+  ['suppressed_count', 'INTEGER DEFAULT 0'], ['last_worked_by', "TEXT DEFAULT ''"], ['work_streak', 'INTEGER DEFAULT 0'],
+  ['gift_id', "TEXT DEFAULT ''"]
 ] as const) addColumnIfMissing('abnormalities', column, definition);
 
 db.query(`
@@ -317,17 +399,31 @@ function getWeapon(agent: any) {
   return EGO_WEAPONS[agent.weapon] || EGO_WEAPONS.riot_stick;
 }
 
+function getGift(agent: any): GiftDef | null {
+  return agent?.equipped_gift ? (EGO_GIFTS[agent.equipped_gift] ?? null) : null;
+}
+
+// Effective stat = base stat + whatever an equipped E.G.O. gift adds. Use this
+// instead of statValue() anywhere a gift's bonus should actually matter.
+function getEffectiveStat(agent: any, stat: StatName) {
+  const gift = getGift(agent);
+  return statValue(agent, stat) + (gift?.statBonus?.[stat] ?? 0);
+}
+
 function calculateMaxHp(fortitude: number) {
   return 90 + fortitude * 12;
 }
 
-function calculateMaxSp(prudence: number) {
-  return 80 + prudence * 12;
+function calculateMaxSp(prudence: number, agent?: any) {
+  let max = 80 + prudence * 12;
+  const gift = agent ? getGift(agent) : null;
+  if (gift?.maxSpMult) max = Math.floor(max * gift.maxSpMult);
+  return max;
 }
 
 function syncAgentMaxStats(agent: any) {
   const newMaxHp = calculateMaxHp(agent.fortitude);
-  const newMaxSp = calculateMaxSp(agent.prudence);
+  const newMaxSp = calculateMaxSp(agent.prudence, agent);
   const hpRatio = agent.max_hp > 0 ? agent.hp / agent.max_hp : 1;
   const spRatio = agent.max_sp > 0 ? agent.sp / agent.max_sp : 1;
 
@@ -346,6 +442,9 @@ function applyDamage(agent: any, amount: number, type: string) {
   if (type === 'WHITE') multiplier = suit.white;
   if (type === 'BLACK') multiplier = suit.black;
   if (type === 'PALE') multiplier = suit.pale;
+
+  const gift = getGift(agent);
+  if (gift?.incomingDamageMult) amount = amount * gift.incomingDamageMult;
 
   const trait = agent.trait === 'cautious' ? 0.90 : (agent.trait === 'reckless' ? 1.10 : 1.0);
   const defense = Math.max(0.75, 1 - suit.defense * 0.04);
@@ -373,12 +472,14 @@ function applyDamage(agent: any, amount: number, type: string) {
 function updateAgent(agent: any) {
   db.query(`
     UPDATE agents SET hp=?, max_hp=?, sp=?, max_sp=?, status=?, experience=?, level=?,
-    fortitude=?, prudence=?, temperance=?, justice=?, trait=?, recovery_days=?, assignments=?, kills=?, promotions=?
+    fortitude=?, prudence=?, temperance=?, justice=?, trait=?, recovery_days=?, assignments=?, kills=?, promotions=?,
+    ego_gifts=?, equipped_gift=?
     WHERE discord_id=? AND guild_id=?
   `).run(
     agent.hp, agent.max_hp, agent.sp, agent.max_sp, agent.status, agent.experience, agent.level,
     agent.fortitude, agent.prudence, agent.temperance, agent.justice, agent.trait,
-    agent.recovery_days, agent.assignments, agent.kills, agent.promotions, agent.discord_id, agent.guild_id
+    agent.recovery_days, agent.assignments, agent.kills, agent.promotions,
+    agent.ego_gifts ?? '[]', agent.equipped_gift ?? '', agent.discord_id, agent.guild_id
   );
 }
 
@@ -427,15 +528,16 @@ function seedAbnormalities(guildId: string) {
   if (Number(existing.count) > 0) return;
 
   for (const template of ABNORMALITY_TEMPLATES) {
+    const giftId = (template as any).gift?.id ?? '';
     db.query(`
       INSERT INTO abnormalities (
         guild_id, name, risk, hp, max_hp, qliphoth, max_qliphoth, damage_type, damage_amt,
-        work_instinct, work_insight, work_attachment, work_repression, escape_chance, behaviour, description
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        work_instinct, work_insight, work_attachment, work_repression, escape_chance, behaviour, description, gift_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       guildId, template.name, template.risk, template.hp, template.hp, template.qliphoth, template.qliphoth,
       template.damage_type, template.damage_amt, template.instinct, template.insight, template.attachment,
-      template.repression, template.escape_chance, template.behaviour, template.description
+      template.repression, template.escape_chance, template.behaviour, template.description, giftId
     );
   }
 }
@@ -445,9 +547,9 @@ function getCurrentWorkAffinity(abno: any, workType: WorkType) {
   return clamp(Number(abno[key] ?? 0.5), 0.05, 0.99);
 }
 
-function calculateWorkChance(agent: any, abno: any, workType: WorkType, facility: any) {
+function calculateWorkChance(agent: any, abno: any, workType: WorkType, facility: any, level: number = 1) {
   const work = WORK_TYPES[workType];
-  const stat = statValue(agent, work.stat);
+  const stat = getEffectiveStat(agent, work.stat);
   const affinity = getCurrentWorkAffinity(abno, workType);
   const riskPenalty = (RISK_VALUES[abno.risk] ?? 1) * 0.035;
   const facilityBonus = (Number(facility.research) / 100) * 0.015 + Number(facility.welfare_level) * 0.01;
@@ -463,15 +565,45 @@ function calculateWorkChance(agent: any, abno: any, workType: WorkType, facility
   if (agent.status === 'recovering') chance -= 0.15;
 
   chance -= Number(abno.rage) * 0.015;
-  return clamp(chance, 0.08, 0.96);
+
+  // pushing to a deeper work level is a deliberate gamble — each step down
+  // costs consistency in exchange for bigger PE box payouts.
+  chance -= (clamp(level, 1, 4) - 1) * 0.09;
+
+  const behaviour = getBehaviour(abno);
+  if (behaviour === 'docile') {
+    chance += 0.06;
+  } else if (behaviour === 'possessive') {
+    if (abno.last_worked_by && abno.last_worked_by === agent.discord_id) {
+      chance += Math.min(0.15, 0.05 + Number(abno.work_streak ?? 0) * 0.02);
+    } else if (abno.last_worked_by) {
+      chance -= 0.12;
+    }
+  } else if (behaviour === 'predatory') {
+    if (agent.status === 'injured' || agent.status === 'stressed') chance -= 0.10;
+  }
+  // volatile doesn't shift the baseline — its instability is applied as extra
+  // swing at the roll itself, in workQuality().
+
+  const gift = getGift(agent);
+  if (gift?.workChanceBonus?.[workType]) chance += gift.workChanceBonus[workType]!;
+
+  return clamp(chance, 0.05, 0.97);
 }
 
-function workQuality(chance: number) {
-  const roll = Math.random();
-  if (roll < chance * 0.35) return { tier: 'good', boxes: 2 + (Math.random() < chance ? 1 : 0) };
-  if (roll < chance) return { tier: 'normal', boxes: 1 + (Math.random() < chance * 0.65 ? 1 : 0) };
-  if (roll < Math.min(0.99, chance + 0.18)) return { tier: 'bad', boxes: 1 };
-  return { tier: 'critical', boxes: 0 };
+function workQuality(chance: number, level: number = 1, behaviour: Behaviour = 'docile') {
+  let roll = Math.random();
+  if (behaviour === 'volatile') {
+    // volatile abnormalities swing the actual outcome roll itself, not just
+    // the odds — the same 60% chance can feel completely different twice in a row.
+    roll = clamp(roll + (Math.random() - 0.5) * 0.30, 0, 1);
+  }
+
+  const levelBonus = clamp(level, 1, 4) - 1;
+  if (roll < chance * 0.35) return { tier: 'good' as const, boxes: 2 + levelBonus + (Math.random() < chance ? 1 : 0) };
+  if (roll < chance) return { tier: 'normal' as const, boxes: 1 + Math.floor(levelBonus * 0.6) + (Math.random() < chance * 0.65 ? 1 : 0) };
+  if (roll < Math.min(0.99, chance + 0.18)) return { tier: 'bad' as const, boxes: Math.max(0, 1 - Math.floor(levelBonus * 0.5)) };
+  return { tier: 'critical' as const, boxes: 0 };
 }
 
 async function sendBreachAlert(interaction: any, facility: any, abno: any) {
@@ -500,7 +632,26 @@ async function sendBreachAlert(interaction: any, facility: any, abno: any) {
   await containCh.send({ content: '@everyone', embeds: [breachEmbed], components: [row] });
 }
 
-async function executeWork(interaction: any, agent: any, abno: any, workType: WorkType, facility: any) {
+function buildLevelRow(workType: WorkType, abno: any) {
+  const maxLevel = WORK_LEVEL_MAX[abno.risk] ?? 2;
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    ...Array.from({ length: maxLevel }, (_, i) => i + 1).map(lvl =>
+      new ButtonBuilder()
+        .setCustomId(`worklvl_${workType}_${abno.id}_${lvl}`)
+        .setLabel(`lv.${lvl}`)
+        .setStyle(lvl === 1 ? ButtonStyle.Secondary : lvl === maxLevel ? ButtonStyle.Danger : ButtonStyle.Primary)
+    )
+  );
+}
+
+function levelPreviewText(agent: any, abno: any, workType: WorkType, facility: any) {
+  const maxLevel = WORK_LEVEL_MAX[abno.risk] ?? 2;
+  return Array.from({ length: maxLevel }, (_, i) => i + 1)
+    .map(lvl => `**lv.${lvl}**: ${Math.round(calculateWorkChance(agent, abno, workType, facility, lvl) * 100)}% success`)
+    .join(' · ');
+}
+
+async function executeWork(interaction: any, agent: any, abno: any, workType: WorkType, facility: any, level: number = 1) {
   if (!abno) {
     return interaction.reply({ content: '❌ that abnormality no longer exists!', ephemeral: true });
   }
@@ -514,11 +665,20 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     return interaction.reply({ content: `🧠 you are ${agent.status}. recover before working again!`, ephemeral: true });
   }
 
-  const chance = calculateWorkChance(agent, abno, workType, facility);
-  const result = workQuality(chance);
+  const maxLevel = WORK_LEVEL_MAX[abno.risk] ?? 2;
+  level = clamp(Math.floor(level), 1, maxLevel);
+  const behaviour = getBehaviour(abno);
+  const wasWeakened = agent.status === 'injured' || agent.status === 'stressed';
+
+  const chance = calculateWorkChance(agent, abno, workType, facility, level);
+  const result = workQuality(chance, level, behaviour);
   let totalDamage = 0;
   const tickResults: string[] = [];
   let peBoxes = result.boxes;
+
+  // predatory abnormalities hit harder against a handler who is already worn down
+  let effectiveDamageAmt = abno.damage_amt * (1 + (level - 1) * 0.25);
+  if (behaviour === 'predatory' && wasWeakened) effectiveDamageAmt *= 1.5;
 
   agent.status = 'working';
   agent.assignments += 1;
@@ -532,11 +692,26 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
       } else {
         tickResults.push('⚡ PE');
       }
+      // volatile containment can still bite even during a good tick
+      if (behaviour === 'volatile' && Math.random() < 0.12) {
+        const spike = applyDamage(agent, Math.floor(effectiveDamageAmt * 0.5), abno.damage_type);
+        totalDamage += spike;
+        tickResults.push(`🌪️ ${spike} instability dmg`);
+      }
     } else {
-      const damage = applyDamage(agent, abno.damage_amt * (result.tier === 'critical' ? 1.35 : 1), abno.damage_type);
+      const damage = applyDamage(agent, effectiveDamageAmt * (result.tier === 'critical' ? 1.35 : 1), abno.damage_type);
       totalDamage += damage;
       tickResults.push(`💥 ${damage} dmg`);
     }
+  }
+
+  // possessive abnormalities remember who's been showing up
+  if (behaviour === 'possessive') {
+    abno.work_streak = abno.last_worked_by === agent.discord_id ? Number(abno.work_streak ?? 0) + 1 : 1;
+    abno.last_worked_by = agent.discord_id;
+  } else {
+    abno.last_worked_by = agent.discord_id;
+    abno.work_streak = 0;
   }
 
   const trait = getTrait(agent);
@@ -564,14 +739,16 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     abno.is_breaching = 1;
     abno.breaches += 1;
     abno.rage = Math.min(10, abno.rage + 2);
-    db.query(`UPDATE abnormalities SET qliphoth=?, is_breaching=1, rage=?, breaches=? WHERE id=?`).run(
-      abno.qliphoth, abno.rage, abno.breaches, abno.id
+    db.query(`UPDATE abnormalities SET qliphoth=?, is_breaching=1, rage=?, breaches=?, last_worked_by=?, work_streak=? WHERE id=?`).run(
+      abno.qliphoth, abno.rage, abno.breaches, abno.last_worked_by, abno.work_streak, abno.id
     );
     eventMessages.push(`🚨 **${abno.name.toUpperCase()} HAS BREACHED!**`);
     logEvent(interaction.guildId!, facility.day_count, facility.phase, 'breach', `${abno.name} breached after failed work.`);
     await sendBreachAlert(interaction, facility, abno);
   } else {
-    db.query(`UPDATE abnormalities SET qliphoth=?, rage=? WHERE id=?`).run(abno.qliphoth, abno.rage, abno.id);
+    db.query(`UPDATE abnormalities SET qliphoth=?, rage=?, last_worked_by=?, work_streak=? WHERE id=?`).run(
+      abno.qliphoth, abno.rage, abno.last_worked_by, abno.work_streak, abno.id
+    );
   }
 
   const generated = peBoxes * (1 + Math.max(0, Number(facility.research) - 100) / 500);
@@ -591,7 +768,9 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   updateAgent(agent);
 
   const work = WORK_TYPES[workType];
-  let resultText = `🧪 you performed **${work.label}** work on **${abno.name}**.\n`;
+  const bInfo = BEHAVIOUR_INFO[behaviour];
+  let resultText = `🧪 you performed **${work.label}** work (level **${level}/${maxLevel}**) on **${abno.name}**.\n`;
+  resultText += `${bInfo.icon} behaviour: **${bInfo.label}**\n`;
   resultText += `🎯 success chance: **${Math.round(chance * 100)}%**\n`;
   resultText += `📈 result: **${result.tier.toUpperCase()}**\n`;
   resultText += `⚡ generated **${energyGain} energy** from **${peBoxes} PE boxes**\n`;
@@ -602,6 +781,12 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   resultText += `📝 ${tickResults.join(' · ')}`;
 
   if (trait) resultText += `\n🎭 trait: **${trait.name}** — ${trait.description}`;
+  if (behaviour === 'possessive' && abno.work_streak >= 2) {
+    resultText += `\n💜 *${abno.name} seems to recognize you now (bond streak: ${abno.work_streak}).*`;
+  }
+  if (behaviour === 'predatory' && wasWeakened) {
+    resultText += `\n🦈 *it noticed you were already hurting, and it did not go easy on you.*`;
+  }
   if (eventMessages.length) resultText += `\n\n${eventMessages.join('\n')}`;
   if (levelMessages.length) resultText += `\n\n${levelMessages.join('\n')}`;
   if (agent.status === 'dead') resultText += `\n\n💀 **YOU HAVE DIED.**`;
@@ -642,7 +827,7 @@ function facilityDashboard(facility: any, agents: any[], abnormalities: any[]) {
     embed.addFields({
       name: '🧪 Containment overview',
       value: abnormalities.map(a =>
-        `${a.is_breaching ? '🚨' : '🟢'} **${a.name}** [${a.risk}] — qliphoth ${a.qliphoth}/${a.max_qliphoth} — HP ${a.hp}/${a.max_hp}`
+        `${a.is_breaching ? '🚨' : '🟢'} ${BEHAVIOUR_INFO[getBehaviour(a)].icon} **${a.name}** [${a.risk}] — qliphoth ${a.qliphoth}/${a.max_qliphoth} — HP ${a.hp}/${a.max_hp}`
       ).join('\n').slice(0, 1024)
     });
   }
@@ -653,6 +838,8 @@ function facilityDashboard(facility: any, agents: any[], abnormalities: any[]) {
 function agentStatusEmbed(agent: any, facility: any) {
   const weapon = getWeapon(agent);
   const trait = getTrait(agent);
+  const gift = getGift(agent);
+  const ownedGifts = (JSON.parse(agent.ego_gifts || '[]') as string[]).length;
   const embed = new EmbedBuilder()
     .setTitle(`🏢 agent ${agent.name}'s profile`)
     .setColor(agent.status === 'dead' ? 0x000000 : agent.status === 'panicked' ? 0xFFFF00 : 0x00FFFF)
@@ -661,12 +848,13 @@ function agentStatusEmbed(agent: any, facility: any) {
       { name: '❤️ HP', value: `${agent.hp}/${agent.max_hp}`, inline: true },
       { name: '🧠 SP', value: `${agent.sp}/${agent.max_sp}`, inline: true },
       { name: '⭐ EXP', value: `${agent.experience}/${experienceToNext(agent.level)}`, inline: true },
-      { name: '💪 Fortitude', value: `${agent.fortitude}`, inline: true },
-      { name: '🧠 Prudence', value: `${agent.prudence}`, inline: true },
-      { name: '💗 Temperance', value: `${agent.temperance}`, inline: true },
-      { name: '⚔️ Justice', value: `${agent.justice}`, inline: true },
+      { name: '💪 Fortitude', value: `${getEffectiveStat(agent, 'fortitude')}${gift?.statBonus?.fortitude ? ` (${agent.fortitude}+${gift.statBonus.fortitude})` : ''}`, inline: true },
+      { name: '🧠 Prudence', value: `${getEffectiveStat(agent, 'prudence')}${gift?.statBonus?.prudence ? ` (${agent.prudence}+${gift.statBonus.prudence})` : ''}`, inline: true },
+      { name: '💗 Temperance', value: `${getEffectiveStat(agent, 'temperance')}${gift?.statBonus?.temperance ? ` (${agent.temperance}+${gift.statBonus.temperance})` : ''}`, inline: true },
+      { name: '⚔️ Justice', value: `${getEffectiveStat(agent, 'justice')}${gift?.statBonus?.justice ? ` (${agent.justice}+${gift.statBonus.justice})` : ''}`, inline: true },
       { name: '⚔️ Weapon', value: `${weapon.name} (${weapon.type}: ${weapon.min}-${weapon.max})`, inline: true },
       { name: '🛡️ Suit', value: EGO_SUITS[agent.suit]?.name || 'Basic Suit', inline: true },
+      { name: '💠 Gift', value: gift ? `${gift.icon} ${gift.name}\n${gift.drawback}` : `none equipped (owns ${ownedGifts})`, inline: false },
       { name: '📋 Assignments', value: `${agent.assignments}`, inline: true },
       { name: '💀 Kills', value: `${agent.kills}`, inline: true },
       { name: '🏅 Promotions', value: `${agent.promotions}`, inline: true },
@@ -740,7 +928,9 @@ function maybeTriggerSpontaneousBreaches(guildId: string, facility: any): any[] 
   const triggered: any[] = [];
 
   for (const abno of candidates) {
-    const danger = Number(abno.escape_chance) + Number(abno.rage) * 0.015 + (Number(facility.security_level) < RISK_VALUES[abno.risk] ? 0.03 : 0);
+    const behaviour = getBehaviour(abno);
+    const behaviourMult = behaviour === 'docile' ? 0.7 : behaviour === 'volatile' ? 1.35 : behaviour === 'predatory' ? 1.5 : 1.0;
+    const danger = (Number(abno.escape_chance) + Number(abno.rage) * 0.015 + (Number(facility.security_level) < RISK_VALUES[abno.risk] ? 0.03 : 0)) * behaviourMult;
     if (Math.random() < danger) {
       abno.is_breaching = 1;
       abno.breaches += 1;
@@ -783,12 +973,13 @@ function restoreState(guildId: string, state: any) {
     db.query(`
       INSERT INTO agents (
         discord_id, guild_id, name, hp, max_hp, sp, max_sp, weapon, suit, status, level, fortitude, prudence,
-        temperance, justice, experience, trait, recovery_days, assignments, kills, promotions
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        temperance, justice, experience, trait, recovery_days, assignments, kills, promotions, ego_gifts, equipped_gift
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       agent.discord_id, guildId, agent.name, agent.hp, agent.max_hp, agent.sp, agent.max_sp, agent.weapon, agent.suit,
       agent.status, agent.level, agent.fortitude, agent.prudence, agent.temperance, agent.justice,
-      agent.experience, agent.trait, agent.recovery_days, agent.assignments, agent.kills, agent.promotions
+      agent.experience, agent.trait, agent.recovery_days, agent.assignments, agent.kills, agent.promotions,
+      agent.ego_gifts ?? '[]', agent.equipped_gift ?? ''
     );
   }
 
@@ -797,13 +988,13 @@ function restoreState(guildId: string, state: any) {
       INSERT INTO abnormalities (
         id, guild_id, name, risk, hp, max_hp, qliphoth, max_qliphoth, damage_type, damage_amt,
         is_breaching, work_instinct, work_insight, work_attachment, work_repression, escape_chance,
-        behaviour, description, rage, breaches, suppressed_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        behaviour, description, rage, breaches, suppressed_count, last_worked_by, work_streak, gift_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       abno.id, guildId, abno.name, abno.risk, abno.hp, abno.max_hp, abno.qliphoth, abno.max_qliphoth,
       abno.damage_type, abno.damage_amt, abno.is_breaching, abno.work_instinct, abno.work_insight,
       abno.work_attachment, abno.work_repression, abno.escape_chance, abno.behaviour, abno.description,
-      abno.rage, abno.breaches, abno.suppressed_count
+      abno.rage, abno.breaches, abno.suppressed_count, abno.last_worked_by ?? '', abno.work_streak ?? 0, abno.gift_id ?? ''
     );
   }
 
@@ -968,6 +1159,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.reply({ embeds: [agentStatusEmbed(agent, facility)] });
       }
 
+      else if (commandName === 'gifts') {
+        const agent = findAgent(user.id, guildId);
+        if (!agent) return interaction.reply({ content: 'you are not an agent! `/join` first!', ephemeral: true });
+        const owned = JSON.parse(agent.ego_gifts || '[]') as string[];
+        if (!owned.length) {
+          return interaction.reply({ content: '💠 you have not acquired any E.G.O. gifts yet. suppress a breaching abnormality for a chance at one!', ephemeral: true });
+        }
+        const lines = owned
+          .map(id => EGO_GIFTS[id])
+          .filter(Boolean)
+          .map(gift => `${gift.icon} **${gift.name}** *(from ${gift.sourceAbno})*${agent.equipped_gift === gift.id ? ' ✅ equipped' : ''}\n${gift.drawback}`)
+          .join('\n\n');
+        await interaction.reply({ content: `💠 **${agent.name}'S E.G.O. GIFTS**\n\n${lines}`, ephemeral: true });
+      }
+
+      else if (commandName === 'equip-gift') {
+        const agent = findAgent(user.id, guildId);
+        if (!agent) return interaction.reply({ content: 'you are not an agent! `/join` first!', ephemeral: true });
+        const query = interaction.options.getString('gift', true).trim().toLowerCase();
+
+        if (query === 'none' || query === 'unequip') {
+          db.query(`UPDATE agents SET equipped_gift='' WHERE discord_id=? AND guild_id=?`).run(user.id, guildId);
+          return interaction.reply({ content: '💠 gift unequipped.', ephemeral: true });
+        }
+
+        const owned = JSON.parse(agent.ego_gifts || '[]') as string[];
+        const matchId = owned.find(id => EGO_GIFTS[id] && EGO_GIFTS[id].name.toLowerCase().includes(query));
+        if (!matchId) return interaction.reply({ content: `❌ you don't own a gift matching **${query}**. check \`/gifts\`.`, ephemeral: true });
+
+        db.query(`UPDATE agents SET equipped_gift=? WHERE discord_id=? AND guild_id=?`).run(matchId, user.id, guildId);
+        const gift = EGO_GIFTS[matchId];
+        await interaction.reply(`💠 **${gift.icon} ${gift.name}** equipped!!\n${gift.drawback}`);
+      }
+
       else if (commandName === 'dictator-toggle') {
         if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can change dictator mode!!', ephemeral: true });
         const newMode = facility.dictator_mode ? 0 : 1;
@@ -1004,11 +1229,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const abnos = db.query(`SELECT * FROM abnormalities WHERE guild_id=? AND is_breaching=0 ORDER BY id`).all(guildId) as any[];
         const targetAbnoInput = interaction.options.getString('abnormality');
         const workTypeInput = interaction.options.getString('type') as WorkType | null;
+        const levelInput = interaction.options.getInteger('level');
+
+        if (targetAbnoInput && workTypeInput && levelInput) {
+          const selected = abnos.find(a => a.name.toLowerCase().includes(targetAbnoInput.toLowerCase()) || a.id.toString() === targetAbnoInput);
+          if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, ephemeral: true });
+          return executeWork(interaction, agent, selected, workTypeInput, facility, levelInput);
+        }
 
         if (targetAbnoInput && workTypeInput) {
           const selected = abnos.find(a => a.name.toLowerCase().includes(targetAbnoInput.toLowerCase()) || a.id.toString() === targetAbnoInput);
           if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, ephemeral: true });
-          return executeWork(interaction, agent, selected, workTypeInput, facility);
+          const bInfo = BEHAVIOUR_INFO[getBehaviour(selected)];
+          const preview = levelPreviewText(agent, selected, workTypeInput, facility);
+          return interaction.reply({
+            content: `${WORK_TYPES[workTypeInput].icon} **${WORK_TYPES[workTypeInput].label}** on **${selected.name}** ${bInfo.icon}\n\nhow deep do you want to push it? higher levels pay more PE but hit your odds harder.\n${preview}`,
+            components: [buildLevelRow(workTypeInput, selected)]
+          });
         }
 
         if (targetAbnoInput) {
@@ -1024,17 +1261,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
             )
           );
 
+          const bInfo = BEHAVIOUR_INFO[getBehaviour(selected)];
           const info = new EmbedBuilder()
             .setTitle(`🧪 ${selected.name}`)
-            .setDescription(selected.description)
+            .setDescription(`${selected.description}\n\n${bInfo.icon} **${bInfo.label}** — ${bInfo.description}`)
             .addFields(
-              { name: 'risk', value: selected.risk, inline: true },
+              { name: 'risk', value: `${selected.risk} (max work level ${WORK_LEVEL_MAX[selected.risk] ?? 2})`, inline: true },
               { name: 'qliphoth', value: `${selected.qliphoth}/${selected.max_qliphoth}`, inline: true },
               { name: 'damage', value: `${selected.damage_amt} ${selected.damage_type}`, inline: true },
               { name: 'instinct', value: `${Math.round(selected.work_instinct * 100)}%`, inline: true },
               { name: 'insight', value: `${Math.round(selected.work_insight * 100)}%`, inline: true },
               { name: 'attachment', value: `${Math.round(selected.work_attachment * 100)}%`, inline: true },
-              { name: 'repression', value: `${Math.round(selected.work_repression * 100)}%`, inline: true }
+              { name: 'repression', value: `${Math.round(selected.work_repression * 100)}%`, inline: true },
+              { name: '💠 gift', value: selected.gift_id && EGO_GIFTS[selected.gift_id] ? `${EGO_GIFTS[selected.gift_id].icon} ${EGO_GIFTS[selected.gift_id].name} (chance on suppression)` : 'none', inline: false }
             );
 
           return interaction.reply({ embeds: [info], components: [row] });
@@ -1043,12 +1282,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const menu = new StringSelectMenuBuilder()
           .setCustomId('select_abno_work')
           .setPlaceholder('select an abnormality to work on! ✨')
-          .addOptions(abnos.map(a =>
-            new StringSelectMenuOptionBuilder()
+          .addOptions(abnos.map(a => {
+            const bInfo = BEHAVIOUR_INFO[getBehaviour(a)];
+            return new StringSelectMenuOptionBuilder()
               .setLabel(`${a.name} [${a.risk}]`)
-              .setDescription(`qliphoth ${a.qliphoth}/${a.max_qliphoth} · ${a.damage_type} ${a.damage_amt} dmg`)
-              .setValue(a.id.toString())
-          ));
+              .setDescription(`${bInfo.icon} ${bInfo.label} · qliphoth ${a.qliphoth}/${a.max_qliphoth} · ${a.damage_type} ${a.damage_amt} dmg`)
+              .setValue(a.id.toString());
+          }));
 
         await interaction.reply({ content: 'who do you want to work on? 🧪', components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu)] });
       }
@@ -1153,7 +1393,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .map(type => `${WORK_TYPES[type].icon} ${type}: **${Math.round(calculateWorkChance(agent, abno, type, facility) * 100)}%**`)
         .join('\n');
 
-      await interaction.update({ content: `🧪 **${abno.name}**\n\n${preview}\n\nchoose your work type!`, components: [row] });
+      const bInfo = BEHAVIOUR_INFO[getBehaviour(abno)];
+      await interaction.update({ content: `🧪 **${abno.name}** — ${bInfo.icon} *${bInfo.label}*\n${bInfo.description}\n\n${preview}\n\nchoose your work type!`, components: [row] });
     }
 
     // ==========================================
@@ -1170,7 +1411,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const abno = db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnoId, guildId) as any;
         if (!agent || !abno) return interaction.update({ content: '❌ unable to resolve the work assignment.', components: [] });
         if (facility.is_paused) return interaction.update({ content: '⏸️ facility operations are paused.', components: [] });
-        return executeWork(interaction, agent, abno, workType, facility);
+
+        const bInfo = BEHAVIOUR_INFO[getBehaviour(abno)];
+        const preview = levelPreviewText(agent, abno, workType, facility);
+        return interaction.update({
+          content: `${WORK_TYPES[workType].icon} **${WORK_TYPES[workType].label}** on **${abno.name}** ${bInfo.icon}\n\nhow deep do you want to push it? higher levels pay more PE but hit your odds harder.\n${preview}`,
+          components: [buildLevelRow(workType, abno)]
+        });
+      }
+
+      if (interaction.customId.startsWith('worklvl_')) {
+        const [, rawType, abnoId, rawLevel] = interaction.customId.split('_');
+        const workType = rawType as WorkType;
+        const level = Number(rawLevel) || 1;
+        const agent = findAgent(interaction.user.id, guildId);
+        const abno = db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnoId, guildId) as any;
+        if (!agent || !abno) return interaction.update({ content: '❌ unable to resolve the work assignment.', components: [] });
+        if (facility.is_paused) return interaction.update({ content: '⏸️ facility operations are paused.', components: [] });
+        return executeWork(interaction, agent, abno, workType, facility, level);
       }
 
       if (interaction.customId.startsWith('suppress_')) {
@@ -1184,19 +1442,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         if (!abno.is_breaching) return interaction.reply({ content: 'that abnormality is not currently breaching.', ephemeral: true });
 
+        const behaviour = getBehaviour(abno);
         const weapon = getWeapon(agent);
         const facilitySecurity = Number(facility.security_level);
         let agentDamage = rand(weapon.min, weapon.max);
-        agentDamage = Math.floor(agentDamage * (1 + agent.justice * 0.04) * weapon.speed);
+        agentDamage = Math.floor(agentDamage * (1 + getEffectiveStat(agent, 'justice') * 0.04) * weapon.speed);
         if (agent.trait === 'reckless') agentDamage = Math.floor(agentDamage * 1.15);
         agentDamage += facilitySecurity;
 
-        const incoming = applyDamage(agent, abno.damage_amt * 2, abno.damage_type);
+        // behaviour shapes how hard the abnormality fights back
+        let incomingMultiplier = 2;
+        if (behaviour === 'docile') incomingMultiplier *= 0.85;
+        if (behaviour === 'volatile') incomingMultiplier *= (0.8 + Math.random() * 0.5);
+        if (behaviour === 'predatory' && (agent.hp < agent.max_hp * 0.4 || agent.sp < agent.max_sp * 0.4)) incomingMultiplier *= 1.4;
+
+        const incoming = applyDamage(agent, abno.damage_amt * incomingMultiplier, abno.damage_type);
         abno.hp -= agentDamage;
         agent.assignments += 1;
 
+        const bInfo = BEHAVIOUR_INFO[behaviour];
         let combatLog = `⚔️ **${agent.name}** attacked with **${weapon.name}** for **${agentDamage} ${weapon.type} damage**.\n`;
-        combatLog += `💥 **${abno.name}** retaliated for **${incoming} ${abno.damage_type} damage**.\n`;
+        combatLog += `${bInfo.icon} **${abno.name}** (${bInfo.label}) retaliated for **${incoming} ${abno.damage_type} damage**.\n`;
         combatLog += `❤️ ${agent.hp}/${agent.max_hp} HP · 🧠 ${agent.sp}/${agent.max_sp} SP`;
 
         if (agent.status === 'dead') {
@@ -1214,12 +1480,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
           abno.suppressed_count += 1;
           agent.kills += 1;
           const expMessages = awardExperience(agent, 12 + RISK_VALUES[abno.risk] * 8);
+
+          // suppressing a breach is the only moment an E.G.O. gift can surface
+          let giftLog = '';
+          if (abno.gift_id && EGO_GIFTS[abno.gift_id]) {
+            const owned = JSON.parse(agent.ego_gifts || '[]') as string[];
+            if (!owned.includes(abno.gift_id)) {
+              const dropChance = clamp(0.15 + RISK_VALUES[abno.risk] * 0.05, 0, 0.55);
+              if (Math.random() < dropChance) {
+                owned.push(abno.gift_id);
+                agent.ego_gifts = json(owned);
+                const gift = EGO_GIFTS[abno.gift_id];
+                giftLog = `\n\n💠 **E.G.O. GIFT ACQUIRED: ${gift.icon} ${gift.name}!**\n${gift.drawback}\nequip it any time with \`/equip-gift ${gift.name}\`.`;
+              }
+            }
+          }
+
           updateAgent(agent);
           db.query(`UPDATE abnormalities SET hp=?, is_breaching=0, qliphoth=?, rage=?, suppressed_count=? WHERE id=?`)
             .run(abno.hp, abno.qliphoth, abno.rage, abno.suppressed_count, abno.id);
           logEvent(guildId, facility.day_count, facility.phase, 'suppression', `${agent.name} suppressed ${abno.name}.`);
           combatLog += `\n\n🎉 **${abno.name.toUpperCase()} HAS BEEN SUPPRESSED!** it has returned to containment.`;
           if (expMessages.length) combatLog += `\n${expMessages.join('\n')}`;
+          if (giftLog) combatLog += giftLog;
           await interaction.update({ content: combatLog, components: [] });
         } else {
           updateAgent(agent);
