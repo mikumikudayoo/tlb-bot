@@ -21,7 +21,8 @@ import { Database } from 'bun:sqlite';
 // affinities and behaviour, days generate events, breaches create combat,
 // resources can be invested, and saves preserve the whole simulation state.
 
-export const db = new Database('facility.sqlite', { create: true });
+const DATABASE_PATH = process.env.FACILITY_DB_PATH?.trim() || 'facility.sqlite';
+export const db = new Database(DATABASE_PATH, { create: true });
 
 type WorkType = 'instinct' | 'insight' | 'attachment' | 'repression';
 type StatName = 'fortitude' | 'prudence' | 'temperance' | 'justice';
@@ -3769,4 +3770,73 @@ ${lines}`.slice(0, 1900), ephemeral: true });
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+
+// ==========================================
+// 🧪 TEST-ONLY ENGINE SURFACE
+// ==========================================
+// Tests can exercise the real production logic without duplicating helpers.
+// This object is inert during normal bot operation and intentionally keeps the
+// public runtime API small while giving bun:test deep engine access.
+export const __test = {
+  clamp,
+  rand,
+  getFavorLabel,
+  getWorkFavorLabel,
+  ensureAgentKnowledge,
+  getAgentKnowledge,
+  totalUniquePE,
+  updateAgentKnowledge,
+  getObservationConfidence,
+  getAgentObservations,
+  recordSharedShiftRelationships,
+  getRelationshipLabel,
+  getPhaseLabel,
+  buildManagementTips,
+  ensureFacilityChannels,
+  getTrait,
+  getSuit,
+  getWeapon,
+  getGift,
+  getEffectiveStat,
+  calculateMaxHp,
+  calculateMaxSp,
+  syncAgentMaxStats,
+  applyDamage,
+  updateAgent,
+  experienceToNext,
+  awardExperience,
+  findAgent,
+  ensureFacility,
+  maybeUnlockCodexEntry,
+  maybeTriggerOrdeal,
+  getPanicBehaviorKey,
+  applyPanicState,
+  panicSupportChance,
+  resolvePanicPhase,
+  seedAbnormalities,
+  getCurrentWorkAffinity,
+  getMeltdownState,
+  getUnlockedDepartments,
+  isDepartmentUnlocked,
+  getDepartmentBonus,
+  triggerMeltdownAlarm,
+  resolveMeltdownTimers,
+  calculateWorkChance,
+  workQuality,
+  renderPEProgress,
+  buildPEVisualString,
+  getPEBoxTotal,
+  nextPhase,
+  resolveDailyRecovery,
+  resetDailyOperationalState,
+  runDailyEvent,
+  maybeTriggerSpontaneousBreaches,
+  serializeFacility,
+  restoreState
+};
+
+// Importing the module in a test process must never attempt a real Discord
+// login. Normal `bun run index.ts` behavior is unchanged.
+if (process.env.BOT_TEST_MODE !== '1' && process.env.NODE_ENV !== 'test') {
+  client.login(process.env.DISCORD_TOKEN);
+}
