@@ -4,7 +4,7 @@ import { Database } from 'bun:sqlite';
 process.env.DISCORD_TOKEN = 'test-token';
 
 import * as botModule from '../index.ts';
-import { resolvePanicBehavior, createMemoryCheckpoint, evaluateDepartmentUnlocks, updateDepartmentQuestProgress, ensureDepartmentQuestRows, travelToDepartment } from '../index.ts';
+import { resolvePanicBehavior, createMemoryCheckpoint, evaluateDepartmentUnlocks, updateDepartmentQuestProgress, ensureDepartmentQuestRows, travelToDepartment, recordAgentWorkHistory, recordAgentObservation, updateAgentRelationship, getShiftProfile, getTravelDuration, startAgentTravel, resolveAgentTravel, createAmbientRadioEvent } from '../index.ts';
 
 const moduleDb = botModule.db;
 
@@ -73,6 +73,18 @@ describe('Lobotomy Game Engine Logic Tests', () => {
   });
 
   describe('Mathematical Boundary Clamping', () => {
+    it('should make emergency shifts riskier and more productive than morning shifts', () => {
+      const morning = getShiftProfile(8);
+      const emergency = getShiftProfile(22);
+
+      expect(morning.label).toBe('Morning');
+      expect(emergency.label).toBe('Emergency');
+      expect(emergency.workChance).toBeLessThan(morning.workChance);
+      expect(emergency.damageMultiplier).toBeGreaterThan(morning.damageMultiplier);
+      expect(emergency.energyMultiplier).toBeGreaterThan(morning.energyMultiplier);
+      expect(emergency.breachMultiplier).toBeGreaterThan(morning.breachMultiplier);
+    });
+
     it('should clamp success chance between 5% and 95%', () => {
       const maxChance = calculateWorkChance(100, 0.8, 'ZAYIN');
       expect(maxChance).toBe(0.95);
@@ -97,6 +109,62 @@ describe('Lobotomy Game Engine Logic Tests', () => {
   });
 
   describe('Database State Integrity', () => {
+    it('should keep a private work log per agent', () => {
+      recordAgentWorkHistory({
+        guildId: 'guild_log_test',
+        discordId: 'agent_emu',
+        day: 4,
+        phase: 16,
+        abnormalityId: 7,
+        abnormalityName: 'Beauty and the Beast',
+        workType: 'attachment',
+        result: 'good',
+        peBoxes: 4,
+        qliphothChange: 1,
+        damage: 3,
+        note: 'it appeared to recognize you.'
+      });
+
+      const row = moduleDb.query(`SELECT * FROM agent_work_history WHERE guild_id=? AND discord_id=?`).get('guild_log_test', 'agent_emu') as any;
+      expect(row.abnormality_name).toBe('Beauty and the Beast');
+      expect(row.work_type).toBe('attachment');
+      expect(row.result).toBe('good');
+      expect(row.pe_boxes).toBe(4);
+      expect(row.qliphoth_change).toBe(1);
+      expect(row.note).toContain('recognize');
+    });
+
+    it('should classify repeated outcomes as suspected behavioral evidence', () => {
+      moduleDb.query(`DELETE FROM agent_abnormality_observations WHERE guild_id=?`).run('guild_observation_test');
+      const observation = {
+        guildId: 'guild_observation_test',
+        discordId: 'agent_emu',
+        abnormalityId: 7,
+        workType: 'attachment' as const,
+        result: 'good' as const,
+        qliphothChange: 1
+      };
+      recordAgentObservation(observation);
+      recordAgentObservation(observation);
+
+      const row = moduleDb.query(`SELECT * FROM agent_abnormality_observations WHERE guild_id=? AND discord_id=?`).get('guild_observation_test', 'agent_emu') as any;
+      expect(row.attempts).toBe(2);
+      expect(row.good).toBe(2);
+      expect(row.qliphoth_gains).toBe(2);
+    });
+
+    it('should keep relationship trust directional and bounded', () => {
+      moduleDb.query(`DELETE FROM agent_relationships WHERE guild_id=?`).run('guild_relationship_test');
+      updateAgentRelationship('guild_relationship_test', 'agent_emu', 'agent_miku', 20);
+      updateAgentRelationship('guild_relationship_test', 'agent_emu', 'agent_miku', -4);
+      updateAgentRelationship('guild_relationship_test', 'agent_miku', 'agent_emu', 3);
+
+      const emuToMiku = moduleDb.query(`SELECT * FROM agent_relationships WHERE guild_id=? AND from_discord_id=? AND to_discord_id=?`).get('guild_relationship_test', 'agent_emu', 'agent_miku') as any;
+      const mikuToEmu = moduleDb.query(`SELECT * FROM agent_relationships WHERE guild_id=? AND from_discord_id=? AND to_discord_id=?`).get('guild_relationship_test', 'agent_miku', 'agent_emu') as any;
+      expect(emuToMiku.trust).toBe(0);
+      expect(mikuToEmu.trust).toBe(2);
+    });
+
     it('should block non-managers when dictator mode is active', () => {
       db.run(`INSERT INTO facility (guild_id, manager_id, dictator_mode) VALUES (?, ?, ?)`, ['guild_123', 'manager_456', 1]);
 
@@ -190,6 +258,59 @@ describe('Lobotomy Game Engine Logic Tests', () => {
 
       expect(result).toBe('security');
       expect(row.current_sector).toBe('security');
+    });
+
+    it('should keep an agent in transit until the route phases resolve', () => {
+      moduleDb.query(`DELETE FROM agents WHERE guild_id=?`).run('guild_transit_test');
+      moduleDb.query(`DELETE FROM facility WHERE guild_id=?`).run('guild_transit_test');
+      moduleDb.run(`INSERT INTO facility (guild_id, manager_id, day_count, department_unlocks, current_sector) VALUES (?, ?, ?, ?, ?)`, [
+        'guild_transit_test', 'manager_1', 5, JSON.stringify(['control', 'information', 'security', 'training', 'command']), 'control'
+      ]);
+      moduleDb.run(`INSERT INTO agents (discord_id, guild_id, name, department) VALUES (?, ?, ?, ?)`, [
+        'agent_emu', 'guild_transit_test', 'Emu', 'control'
+      ]);
+
+      const travel = startAgentTravel('guild_transit_test', 'agent_emu', 'command') as any;
+      expect(travel.status).toBe('traveling');
+      expect(travel.duration).toBe(getTravelDuration('control', 'command'));
+
+      let agent = moduleDb.query(`SELECT * FROM agents WHERE guild_id=? AND discord_id=?`).get('guild_transit_test', 'agent_emu') as any;
+      expect(agent.department).toBe('control');
+      expect(agent.travel_destination).toBe('command');
+      expect(agent.travel_remaining).toBe(2);
+
+      resolveAgentTravel('guild_transit_test');
+      agent = moduleDb.query(`SELECT * FROM agents WHERE guild_id=? AND discord_id=?`).get('guild_transit_test', 'agent_emu') as any;
+      expect(agent.department).toBe('control');
+      expect(agent.travel_remaining).toBe(1);
+
+      resolveAgentTravel('guild_transit_test');
+      agent = moduleDb.query(`SELECT * FROM agents WHERE guild_id=? AND discord_id=?`).get('guild_transit_test', 'agent_emu') as any;
+      expect(agent.department).toBe('command');
+      expect(agent.travel_remaining).toBe(0);
+
+      const arrival = moduleDb.query(`SELECT * FROM facility_events WHERE guild_id=? AND type='arrival'`).get('guild_transit_test') as any;
+      expect(arrival.message).toContain('arrived in command');
+    });
+
+    it('should record an ambient radio transmission in facility history', () => {
+      moduleDb.query(`DELETE FROM facility_events WHERE guild_id=?`).run('guild_radio_test');
+
+      const message = createAmbientRadioEvent('guild_radio_test', { day_count: 3, phase: 14 }, 0.01);
+      const event = moduleDb.query(`SELECT * FROM facility_events WHERE guild_id=? AND type='ambient_event'`).get('guild_radio_test') as any;
+
+      expect(message).toBeTruthy();
+      expect(event.day).toBe(3);
+      expect(event.phase).toBe(14);
+      expect(event.message).toBe(message);
+    });
+
+    it('should not create ambient radio events outside the event roll', () => {
+      moduleDb.query(`DELETE FROM facility_events WHERE guild_id=?`).run('guild_quiet_radio_test');
+
+      expect(createAmbientRadioEvent('guild_quiet_radio_test', { day_count: 3, phase: 14 }, 0.10)).toBeNull();
+      const countRow = moduleDb.query(`SELECT COUNT(*) AS count FROM facility_events WHERE guild_id=?`).get('guild_quiet_radio_test') as { count: number };
+      expect(countRow.count).toBe(0);
     });
   });
 

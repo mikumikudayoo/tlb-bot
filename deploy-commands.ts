@@ -52,6 +52,15 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
+    .setName('info')
+    .setDescription('inspect your personal observation record for an abnormality!')
+    .addStringOption(opt =>
+      opt.setName('abnormality')
+        .setDescription('abnormality name or ID')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
     .setName('gifts')
     .setDescription('view your E.G.O. gift collection! 💠'),
 
@@ -96,6 +105,29 @@ const commands = [
   new SlashCommandBuilder()
     .setName('history')
     .setDescription('view the facility incident history!'),
+
+  new SlashCommandBuilder()
+    .setName('radio')
+    .setDescription('listen to or inspect facility radio transmissions!')
+    .addStringOption(opt =>
+      opt
+        .setName('mode')
+        .setDescription('radio mode')
+        .addChoices(
+          { name: '📻 recent transmissions', value: 'history' },
+          { name: '📡 live radio channel', value: 'channel' },
+          { name: '🧪 manager radio test', value: 'test' }
+        )
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('work-history')
+    .setDescription('view your private work history and observations!'),
+
+  new SlashCommandBuilder()
+    .setName('relationships')
+    .setDescription('view your relationships with other agents!'),
 
   new SlashCommandBuilder()
     .setName('departments')
