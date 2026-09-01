@@ -16,6 +16,8 @@ import { rand, pick } from './src/utils/random';
 import { json } from './src/utils/json';
 import { getWorkType } from './src/config/workTypes';
 import { db as facilityDb } from './src/db/database';
+import * as repositories from './src/repositories';
+import { createDiscordClient, loginDiscordClient } from './src/discord/client';
 import {
   WORK_LEVEL_MAX,
   BEHAVIOUR_INFO,
@@ -40,8 +42,8 @@ import {
   getPEBoxTotal,
   nextPhase
 } from './src/game/logic';
-import { ABNORMALITY_SCRIPTS as externalAbnoScripts } from './src/game/abnormalities/scripts';
-import type { AbnormalityScript, DamageType, DepartmentName, GiftDef, PanicBehaviorKey, StatName, UpgradeType, WorkType } from './src/types/game';
+import { ABNORMALITY_SCRIPTS as externalAbnoScripts, emitFacilityEvent } from './src/game/abnormalities/scripts';
+import type { AbnormalityScript, DamageType, DepartmentName, FacilityEvent, GiftDef, PanicBehaviorKey, StatName, UpgradeType, WorkType } from './src/types/game';
 
 export const db = facilityDb;
 
@@ -352,6 +354,37 @@ export function getAbnormalityScript(abno: any): AbnormalityScript | null {
   return scriptId ? ABNORMALITY_SCRIPTS[scriptId] ?? null : null;
 }
 
+function publishFacilityEvent(guildId: string, event: FacilityEvent, messages?: string[]) {
+  const emittedMessages = emitFacilityEvent(guildId, event);
+  if (messages) messages.push(...emittedMessages);
+  return emittedMessages;
+}
+
+function publishAgentStatusTransition(guildId: string, previousStatus: string, agent: any, messages?: string[]) {
+  const currentStatus = String(agent?.status ?? '');
+  const agentId = String(agent?.discord_id ?? agent?.id ?? agent?.name ?? '');
+  if (!agentId || currentStatus === previousStatus) return currentStatus;
+  if (currentStatus === 'dead') publishFacilityEvent(guildId, { type: 'agent_died', agentId }, messages);
+  if (currentStatus === 'panicked') publishFacilityEvent(guildId, { type: 'agent_panicked', agentId }, messages);
+  return currentStatus;
+}
+
+function publishQliphothChange(
+  guildId: string,
+  abnormalityId: number,
+  oldValue: number,
+  newValue: number,
+  messages?: string[]
+) {
+  if (oldValue === newValue) return;
+  publishFacilityEvent(guildId, {
+    type: 'qliphoth_changed',
+    abnormalityId,
+    oldValue,
+    newValue
+  }, messages);
+}
+
 db.query(`
   CREATE TABLE IF NOT EXISTS save_files (
     save_name TEXT,
@@ -527,70 +560,26 @@ function getWorkFavorLabel(abno: any, workType: WorkType, statLevel: number) {
   return getFavorLabel(score);
 }
 
-function ensureAgentKnowledge(guildId: string, discordId: string, abnormalityId: number) {
-  db.query(`
-    INSERT OR IGNORE INTO agent_abnormality_knowledge
-      (guild_id, discord_id, abnormality_id)
-    VALUES (?, ?, ?)
-  `).run(guildId, discordId, abnormalityId);
-
-  return db.query(`
-    SELECT * FROM agent_abnormality_knowledge
-    WHERE guild_id=? AND discord_id=? AND abnormality_id=?
-  `).get(guildId, discordId, abnormalityId) as any;
+export function ensureAgentKnowledge(guildId: string, discordId: string, abnormalityId: number) {
+  return repositories.ensureAgentKnowledge(guildId, discordId, abnormalityId);
 }
 
-function getAgentKnowledge(guildId: string, discordId: string, abnormalityId: number) {
-  return ensureAgentKnowledge(guildId, discordId, abnormalityId);
+export function getAgentKnowledge(guildId: string, discordId: string, abnormalityId: number) {
+  return repositories.getAgentKnowledge(guildId, discordId, abnormalityId);
 }
 
-function totalUniquePE(knowledge: any) {
-  return ['instinct_pe', 'insight_pe', 'attachment_pe', 'repression_pe']
-    .reduce((sum, key) => sum + clamp(Number(knowledge?.[key] ?? 0), 0, 2), 0);
+export function totalUniquePE(knowledge: any) {
+  return repositories.totalUniquePE(knowledge);
 }
 
-function updateAgentKnowledge(
+export function updateAgentKnowledge(
   guildId: string,
   discordId: string,
   abnormalityId: number,
   workType: WorkType,
   positiveBoxes: number
 ) {
-  const knowledge = ensureAgentKnowledge(guildId, discordId, abnormalityId);
-  const field = `${workType}_pe`;
-  const current = clamp(Number(knowledge?.[field] ?? 0), 0, 2);
-  const gained = clamp(Math.floor(positiveBoxes), 0, 2);
-  const next = clamp(current + gained, 0, 2);
-
-  db.query(`
-    UPDATE agent_abnormality_knowledge
-    SET ${field}=?, last_seen_at=CURRENT_TIMESTAMP
-    WHERE guild_id=? AND discord_id=? AND abnormality_id=?
-  `).run(next, guildId, discordId, abnormalityId);
-
-  const total = totalUniquePE({
-    ...knowledge,
-    [field]: next
-  });
-
-  const tips = total >= 4 ? 1 : 0;
-  const description = total >= 8 ? 1 : 0;
-
-  db.query(`
-    UPDATE agent_abnormality_knowledge
-    SET management_tips=?, description_unlocked=?, last_seen_at=CURRENT_TIMESTAMP
-    WHERE guild_id=? AND discord_id=? AND abnormality_id=?
-  `).run(tips, description, guildId, discordId, abnormalityId);
-
-  return {
-    knowledge: db.query(`
-      SELECT * FROM agent_abnormality_knowledge
-      WHERE guild_id=? AND discord_id=? AND abnormality_id=?
-    `).get(guildId, discordId, abnormalityId) as any,
-    newlyUnlockedWorkFavor: next === 2 && current < 2,
-    newlyUnlockedTips: tips === 1 && Number(knowledge?.management_tips ?? 0) === 0,
-    newlyUnlockedDescription: description === 1 && Number(knowledge?.description_unlocked ?? 0) === 0
-  };
+  return repositories.updateAgentKnowledge(guildId, discordId, abnormalityId, workType, positiveBoxes);
 }
 
 export function recordAgentWorkHistory(entry: {
@@ -607,15 +596,7 @@ export function recordAgentWorkHistory(entry: {
   damage: number;
   note?: string;
 }) {
-  db.query(`
-    INSERT INTO agent_work_history
-      (guild_id, discord_id, day, phase, abnormality_id, abnormality_name, work_type, result, pe_boxes, qliphoth_change, damage, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    entry.guildId, entry.discordId, entry.day, entry.phase, entry.abnormalityId,
-    entry.abnormalityName, entry.workType, entry.result, Math.max(0, Math.floor(entry.peBoxes)),
-    Math.sign(entry.qliphothChange), Math.max(0, Math.floor(entry.damage)), entry.note ?? ''
-  );
+  return repositories.recordAgentWorkHistory(entry);
 }
 
 export function recordAgentObservation(entry: {
@@ -626,97 +607,27 @@ export function recordAgentObservation(entry: {
   result: 'good' | 'normal' | 'bad' | 'critical';
   qliphothChange: number;
 }) {
-  db.query(`
-    INSERT INTO agent_abnormality_observations (guild_id, discord_id, abnormality_id, work_type)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(guild_id, discord_id, abnormality_id, work_type) DO NOTHING
-  `).run(entry.guildId, entry.discordId, entry.abnormalityId, entry.workType);
-
-  db.query(`
-    UPDATE agent_abnormality_observations
-    SET attempts=attempts+1,
-        ${entry.result}=${entry.result}+1,
-        qliphoth_gains=qliphoth_gains+?,
-        qliphoth_losses=qliphoth_losses+?
-    WHERE guild_id=? AND discord_id=? AND abnormality_id=? AND work_type=?
-  `).run(
-    entry.qliphothChange > 0 ? 1 : 0,
-    entry.qliphothChange < 0 ? 1 : 0,
-    entry.guildId,
-    entry.discordId,
-    entry.abnormalityId,
-    entry.workType
-  );
+  return repositories.recordAgentObservation(entry);
 }
 
 function getObservationConfidence(attempts: number) {
-  if (attempts >= 10) return 'confirmed';
-  if (attempts >= 7) return 'consistent';
-  if (attempts >= 4) return 'probable';
-  if (attempts >= 2) return 'suspected';
-  return 'unconfirmed';
+  return repositories.getObservationConfidence(attempts);
 }
 
 function getAgentObservations(guildId: string, discordId: string, abnormalityId: number) {
-  return db.query(`
-    SELECT * FROM agent_abnormality_observations
-    WHERE guild_id=? AND discord_id=? AND abnormality_id=?
-    ORDER BY work_type
-  `).all(guildId, discordId, abnormalityId) as any[];
+  return repositories.getAgentObservations(guildId, discordId, abnormalityId);
 }
 
 export function updateAgentRelationship(guildId: string, fromDiscordId: string, toDiscordId: string, trustChange: number) {
-  if (fromDiscordId === toDiscordId) return;
-  db.query(`
-    INSERT INTO agent_relationships (guild_id, from_discord_id, to_discord_id)
-    VALUES (?, ?, ?)
-    ON CONFLICT(guild_id, from_discord_id, to_discord_id) DO NOTHING
-  `).run(guildId, fromDiscordId, toDiscordId);
-
-  const change = clamp(Math.round(trustChange), -2, 2);
-  db.query(`
-    UPDATE agent_relationships
-    SET trust=MAX(-10, MIN(10, trust + ?)), updated_at=CURRENT_TIMESTAMP
-    WHERE guild_id=? AND from_discord_id=? AND to_discord_id=?
-  `).run(change, guildId, fromDiscordId, toDiscordId);
+  return repositories.updateAgentRelationship(guildId, fromDiscordId, toDiscordId, trustChange);
 }
 
 function recordSharedShiftRelationships(guildId: string, workerId: string, result: 'good' | 'normal' | 'bad' | 'critical') {
-  const coworkers = db.query(`
-    SELECT discord_id FROM agents
-    WHERE guild_id=? AND discord_id<>? AND status<>'dead'
-  `).all(guildId, workerId) as Array<{ discord_id: string }>;
-  const trustChange = result === 'good' ? 1 : result === 'critical' ? -2 : result === 'bad' ? -1 : 0;
-  for (const coworker of coworkers) {
-    updateAgentRelationship(guildId, workerId, coworker.discord_id, trustChange);
-    updateAgentRelationship(guildId, coworker.discord_id, workerId, trustChange);
-    for (const [fromId, toId] of [
-      [workerId, coworker.discord_id],  
-      [coworker.discord_id, workerId]
-    ] as Array<[string, string]>) {
-      db.query(`
-        UPDATE agent_relationships
-        SET shared_shifts=shared_shifts+1,
-            positive_shifts=positive_shifts+?,
-            difficult_shifts=difficult_shifts+?
-        WHERE guild_id=? AND from_discord_id=? AND to_discord_id=?
-      `).run(
-        result === 'good' ? 1 : 0,
-        result === 'bad' || result === 'critical' ? 1 : 0,
-        guildId,
-        fromId,
-        toId
-      );
-    }
-  }
+  return repositories.recordSharedShiftRelationships(guildId, workerId, result);
 }
 
 function getRelationshipLabel(trust: number) {
-  if (trust >= 6) return 'trusting';
-  if (trust >= 2) return 'friendly';
-  if (trust <= -6) return 'uneasy';
-  if (trust <= -2) return 'distrustful';
-  return 'neutral';
+  return repositories.getRelationshipLabel(trust);
 }
 
 function getPhaseLabel(phase: number) {
@@ -1192,8 +1103,10 @@ function resolvePanicPhase(guildId: string, facility: any) {
       const targets = db.query(`SELECT * FROM abnormalities WHERE guild_id=? AND is_breaching=0 ORDER BY RANDOM() LIMIT 1`).all(guildId) as any[];
       const target = targets[0];
       if (target) {
+        const previousQliphoth = Number(target.qliphoth ?? 0);
         target.rage = Math.min(10, Number(target.rage ?? 0) + 1);
         if (Math.random() < 0.30) target.qliphoth = Math.max(0, Number(target.qliphoth) - 1);
+        const resolvedQliphoth = Number(target.qliphoth ?? 0);
         if (target.qliphoth <= 0 && Number(target.can_breach ?? 1)) {
           target.qliphoth = target.max_qliphoth;
           target.is_breaching = 1;
@@ -1203,6 +1116,10 @@ function resolvePanicPhase(guildId: string, facility: any) {
         db.query(`UPDATE abnormalities SET qliphoth=?, rage=?, is_breaching=?, breaches=? WHERE id=?`).run(
           target.qliphoth, target.rage, target.is_breaching, target.breaches, target.id
         );
+        publishQliphothChange(guildId, Number(target.id), previousQliphoth, resolvedQliphoth);
+        if (breached.includes(target)) {
+          publishFacilityEvent(guildId, { type: 'abnormality_breached', abnormalityId: Number(target.id) });
+        }
         action = `🚪 **${agent.name}** wandered into containment and disturbed **${target.name}**.`;
       }
     } else if (behavior === 'breach_seeking') {
@@ -1212,7 +1129,9 @@ function resolvePanicPhase(guildId: string, facility: any) {
         LIMIT 1
       `).get(guildId) as any;
       if (target) {
+        const previousQliphoth = Number(target.qliphoth ?? 0);
         target.qliphoth = Math.max(0, Number(target.qliphoth) - 1);
+        const resolvedQliphoth = Number(target.qliphoth ?? 0);
         target.rage = Math.min(10, Number(target.rage ?? 0) + 2);
         if (target.qliphoth <= 0) {
           target.qliphoth = target.max_qliphoth;
@@ -1223,6 +1142,10 @@ function resolvePanicPhase(guildId: string, facility: any) {
         db.query(`UPDATE abnormalities SET qliphoth=?, rage=?, is_breaching=?, breaches=? WHERE id=?`).run(
           target.qliphoth, target.rage, target.is_breaching, target.breaches, target.id
         );
+        publishQliphothChange(guildId, Number(target.id), previousQliphoth, resolvedQliphoth);
+        if (breached.includes(target)) {
+          publishFacilityEvent(guildId, { type: 'abnormality_breached', abnormalityId: Number(target.id) });
+        }
         action = `🧠 **${agent.name}** tried to force open **${target.name}**'s containment unit.`;
       }
     } else if (behavior === 'lockdown') {
@@ -1236,9 +1159,11 @@ function resolvePanicPhase(guildId: string, facility: any) {
         ORDER BY RANDOM() LIMIT 1
       `).get(guildId, agent.discord_id) as any;
       if (target) {
+        const previousStatus = String(target.status ?? '');
         const damage = applyDamage(target, 8 + Number(agent.justice ?? 1) * 2, 'RED');
         applyPanicState(target);
         updateAgent(target);
+        publishAgentStatusTransition(guildId, previousStatus, target);
         action = `⚔️ **${agent.name}** lashed out at **${target.name}**, dealing **${damage} RED damage**.`;
         updateAgentRelationship(guildId, target.discord_id, agent.discord_id, -2);
       }
@@ -1539,6 +1464,7 @@ function resolveMeltdownTimers(guildId: string, facility: any): any[] {
     const abno = db.query(`SELECT * FROM abnormalities WHERE id = ? AND guild_id = ?`).get(id, guildId) as any;
     if (!abno) continue;
     if (!abno.is_breaching) {
+      const previousQliphoth = Number(abno.qliphoth ?? 0);
       const nextTimer = Number(abno.meltdown_timer ?? 0) - 1;
       abno.meltdown_timer = nextTimer;
       if (nextTimer <= 0) {
@@ -1553,6 +1479,10 @@ function resolveMeltdownTimers(guildId: string, facility: any): any[] {
       db.query(`UPDATE abnormalities SET qliphoth=?, is_breaching=?, breaches=?, meltdown_timer=?, meltdown_state=? WHERE id=?`).run(
         abno.qliphoth, abno.is_breaching, abno.breaches, abno.meltdown_timer, abno.meltdown_state, abno.id
       );
+      if (nextTimer <= 0) {
+        publishQliphothChange(guildId, Number(abno.id), previousQliphoth, 0);
+        publishFacilityEvent(guildId, { type: 'abnormality_breached', abnormalityId: Number(abno.id) });
+      }
       if (abno.meltdown_timer > 0) activeTargets.push(abno.id);
     }
   }
@@ -1703,6 +1633,17 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   const behaviour = getBehaviour(abno);
   const shift = getShiftProfile(Number(facility.phase));
   const wasWeakened = agent.status === 'injured' || agent.status === 'stressed';
+  const eventMessages: string[] = [];
+  let observedAgentStatus = String(agent.status ?? '');
+  const previousQliphoth = Number(abno.qliphoth ?? 0);
+  const wasBreaching = Boolean(abno.is_breaching);
+
+  publishFacilityEvent(interaction.guildId!, {
+    type: 'work_started',
+    agentId: String(agent.discord_id ?? agent.id ?? agent.name),
+    abnormalityId: Number(abno.id),
+    workType
+  }, eventMessages);
 
   // 🧬 Check if this abnormality has an onWorkStart hook
   const script = getAbnormalityScript(abno);
@@ -1710,6 +1651,11 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     const hookResult = script.onWorkStart(agent, abno, workType);
     if (hookResult?.cancelled) {
       updateAgent(agent);
+      observedAgentStatus = publishAgentStatusTransition(interaction.guildId!, observedAgentStatus, agent, eventMessages);
+      publishQliphothChange(interaction.guildId!, Number(abno.id), previousQliphoth, Number(abno.qliphoth ?? 0), eventMessages);
+      if (!wasBreaching && Boolean(abno.is_breaching)) {
+        publishFacilityEvent(interaction.guildId!, { type: 'abnormality_breached', abnormalityId: Number(abno.id) }, eventMessages);
+      }
       return interaction.reply({ content: hookResult.message });
     }
   }
@@ -1764,7 +1710,6 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     tickResults.push('🍀 lucky PE');
   }
 
-  const eventMessages: string[] = [];
   let qChange = 0;
   if (result.tier === 'good' && peBoxes >= 4) qChange = 1;
   else if (result.tier === 'bad' || peBoxes <= 1) qChange = -1;
@@ -1783,6 +1728,9 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     abno.rage = Math.max(0, abno.rage - 1);
   }
 
+  const resolvedQliphoth = Number(abno.qliphoth ?? 0);
+  publishQliphothChange(interaction.guildId!, Number(abno.id), previousQliphoth, resolvedQliphoth, eventMessages);
+
   abno.current_work_process = workType;
   abno.meltdown_timer = Math.max(15, 45 - (abno.max_qliphoth - abno.qliphoth) * 8 + abno.rage * 3);
   abno.meltdown_state = getMeltdownState(abno).label;
@@ -1799,6 +1747,9 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     );
     eventMessages.push(`🚨 **${abno.name.toUpperCase()} HAS BREACHED!**`);
     logEvent(interaction.guildId!, facility.day_count, facility.phase, 'breach', `${abno.name} breached after failed work.`);
+    if (!wasBreaching) {
+      publishFacilityEvent(interaction.guildId!, { type: 'abnormality_breached', abnormalityId: Number(abno.id) }, eventMessages);
+    }
     await sendBreachAlert(interaction, facility, abno);
   } else {
     abno.meltdown_state = getMeltdownState(abno).label;
@@ -1814,7 +1765,26 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   const negativeGoal = Math.max(0, totalMeter - positiveGoal);
   const previousPhase = Number(facility.phase);
   const updatedPhase = nextPhase(previousPhase);
+  const workResultContext = {
+    result: result.tier === 'critical' ? 'bad' as const : result.tier,
+    peBoxes: positiveGoal,
+    neBoxes: negativeGoal,
+    workLevel: level,
+    previousQliphoth
+  };
+  publishFacilityEvent(interaction.guildId!, {
+    type: 'work_finished',
+    agentId: String(agent.discord_id ?? agent.id ?? agent.name),
+    abnormalityId: Number(abno.id),
+    result: workResultContext
+  }, eventMessages);
+  observedAgentStatus = publishAgentStatusTransition(interaction.guildId!, observedAgentStatus, agent, eventMessages);
   db.query(`UPDATE facility SET energy = energy + ?, phase = ? WHERE guild_id = ?`).run(energyGain, updatedPhase, interaction.guildId!);
+  publishFacilityEvent(interaction.guildId!, {
+    type: 'phase_changed',
+    from: previousPhase,
+    to: updatedPhase
+  }, eventMessages);
   resolveAgentTravel(interaction.guildId!);
 
   const ambientMessage = createAmbientRadioEvent(interaction.guildId!, { ...facility, phase: previousPhase });
@@ -1911,6 +1881,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
 
   const workResult = await liveProgress();
   totalDamage = workResult.liveDamageTotal;
+  observedAgentStatus = publishAgentStatusTransition(interaction.guildId!, observedAgentStatus, agent, eventMessages);
 
   const knowledgeResult = updateAgentKnowledge(
     interaction.guildId!,
@@ -2165,6 +2136,7 @@ function maybeTriggerSpontaneousBreaches(guildId: string, facility: any): any[] 
       abno.rage = Math.min(10, abno.rage + 1);
       db.query(`UPDATE abnormalities SET is_breaching=1, breaches=?, rage=? WHERE id=?`).run(abno.breaches, abno.rage, abno.id);
       logEvent(guildId, facility.day_count, facility.phase, 'breach', `${abno.name} spontaneously breached containment.`);
+      publishFacilityEvent(guildId, { type: 'abnormality_breached', abnormalityId: Number(abno.id) });
       triggered.push(abno);
     }
   }
@@ -2326,6 +2298,8 @@ async function endDay(interaction: any, facility: any) {
   const event = runDailyEvent(guildId, facility);
   if (event) eventMessages.push(event);
 
+  publishFacilityEvent(guildId, { type: 'day_ended', day: completedDay }, eventMessages);
+
   const currentFacility = db.query(`SELECT * FROM facility WHERE guild_id = ?`).get(guildId) as any;
   const breaches = maybeTriggerSpontaneousBreaches(guildId, currentFacility);
 
@@ -2334,6 +2308,8 @@ async function endDay(interaction: any, facility: any) {
       stable_days=CASE WHEN ? THEN stable_days + 1 ELSE 0 END
     WHERE guild_id=?
   `).run(nextDay, nextQuota, quotaMet ? 1 : 0, guildId);
+
+  publishFacilityEvent(guildId, { type: 'day_started', day: nextDay }, eventMessages);
 
   resolveAgentTravel(guildId);
 
@@ -2373,7 +2349,27 @@ async function endDay(interaction: any, facility: any) {
 // 🤖 DISCORD CLIENT
 // ==========================================
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+async function handleCommand(_interaction: any, _facility: any) {
+  return undefined;
+}
+
+async function handleButton(_interaction: any, _facility: any) {
+  return undefined;
+}
+
+async function handleSelectMenu(_interaction: any, _facility: any) {
+  return undefined;
+}
+
+const client = createDiscordClient({
+  db,
+  ensureFacility,
+  seedAbnormalities,
+  handleCommand,
+  handleButton,
+  handleSelectMenu,
+  ensureFacilityChannels
+});
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`wonderhooi!! ✨ logged in as ${readyClient.user.tag}!`);
@@ -3035,6 +3031,8 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         // 🧬 Check if this abnormality has an onCombat hook
         let finalAgentDamage = agentDamage;
         let finalAbnoDamage = abno.damage_amt * incomingMultiplier;
+        const previousAgentStatus = String(agent.status ?? '');
+        const previousQliphoth = Number(abno.qliphoth ?? 0);
         const combatScript = getAbnormalityScript(abno);
         if (combatScript?.onCombat) {
           const hookResult = combatScript.onCombat(agent, abno, finalAgentDamage);
@@ -3059,6 +3057,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         } else if (agent.status === 'panicked') {
           combatLog += `\n😵 **${agent.name} has panicked during combat.**`;
         }
+        publishAgentStatusTransition(guildId, previousAgentStatus, agent);
 
         if (abno.hp <= 0) {
           abno.hp = abno.max_hp;
@@ -3092,6 +3091,8 @@ ${lines}`.slice(0, 1900), ephemeral: true });
 
           recordDepartmentProgress(guildId, 'security', 1);
           logEvent(guildId, facility.day_count, facility.phase, 'suppression', `${agent.name} suppressed ${abno.name}.`);
+          publishQliphothChange(guildId, Number(abno.id), previousQliphoth, Number(abno.qliphoth));
+          publishFacilityEvent(guildId, { type: 'abnormality_suppressed', abnormalityId: Number(abno.id) });
           combatLog += `\n\n🎉 **${abno.name.toUpperCase()} HAS BEEN SUPPRESSED!** it has returned to containment.`;
           if (expMessages.length) combatLog += `\n${expMessages.join('\n')}`;
           if (giftLog) combatLog += giftLog;
@@ -3157,6 +3158,8 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         // 🧬 Check if this abnormality has an onCombat hook
         let finalAgentDamage = agentDamage;
         let finalAbnoDamage = abno.damage_amt * incomingMultiplier;
+        const previousAgentStatus = String(agent.status ?? '');
+        const previousQliphoth = Number(abno.qliphoth ?? 0);
         const combatScript2 = getAbnormalityScript(abno);
         if (combatScript2?.onCombat) {
           const hookResult = combatScript2.onCombat(agent, abno, finalAgentDamage);
@@ -3181,6 +3184,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         } else if (agent.status === 'panicked') {
           combatLog += `\n😵 **${agent.name} has panicked during combat.**`;
         }
+        publishAgentStatusTransition(guildId, previousAgentStatus, agent);
 
         if (abno.hp <= 0) {
           abno.hp = abno.max_hp;
@@ -3214,6 +3218,8 @@ ${lines}`.slice(0, 1900), ephemeral: true });
 
           recordDepartmentProgress(guildId, 'security', 1);
           logEvent(guildId, facility.day_count, facility.phase, 'suppression', `${agent.name} suppressed ${abno.name}.`);
+          publishQliphothChange(guildId, Number(abno.id), previousQliphoth, Number(abno.qliphoth));
+          publishFacilityEvent(guildId, { type: 'abnormality_suppressed', abnormalityId: Number(abno.id) });
           combatLog += `\n\n🎉 **${abno.name.toUpperCase()} HAS BEEN SUPPRESSED!** it has returned to containment.`;
           if (expMessages.length) combatLog += `\n${expMessages.join('\n')}`;
           if (giftLog) combatLog += giftLog;
@@ -3317,5 +3323,5 @@ export const __test = {
 // Importing the module in a test process must never attempt a real Discord
 // login. Normal `bun run index.ts` behavior is unchanged.
 if (process.env.BOT_TEST_MODE !== '1' && process.env.NODE_ENV !== 'test') {
-  client.login(process.env.DISCORD_TOKEN);
+  loginDiscordClient(client, process.env.DISCORD_TOKEN);
 }

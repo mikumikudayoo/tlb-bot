@@ -11,6 +11,7 @@ process.env.BOT_TEST_MODE = '1';
 process.env.FACILITY_DB_PATH = ':memory:';
 process.env.DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'test-token';
 
+const { ABNORMALITY_SCRIPTS, emitFacilityEvent, subscribeFacilityEvents } = await import('../src/game/abnormalities/scripts');
 const bot = await import('../index.ts');
 const { db, __test } = bot;
 
@@ -786,10 +787,20 @@ describe('TLB facility torture test', () => {
       const facility = seedFacility(guildId, { phase: 14 });
       seedAgent(guildId, 'emu', { status: 'panicked', sp: 0, fortitude: 1, prudence: 8, temperance: 1, justice: 1, panic_behavior: 'breach_seeking' });
       seedAbnormality(guildId, { id: 1, risk: 'ALEPH', qliphoth: 1, max_qliphoth: 2, can_breach: 1 });
-      const result = await withRandom([0.99], () => __test.resolvePanicPhase(guildId, facility));
+      const events: string[] = [];
+      const unsubscribe = subscribeFacilityEvents(event => {
+        events.push(event.type);
+      }, { guildId });
+      let result: any;
+      try {
+        result = await withRandom([0.99], () => __test.resolvePanicPhase(guildId, facility));
+      } finally {
+        unsubscribe();
+      }
       const abno = db.query(`SELECT * FROM abnormalities WHERE id=1`).get() as any;
       expect(abno.is_breaching).toBe(1);
       expect(result.breached.length).toBe(1);
+      expect(events).toEqual(['qliphoth_changed', 'abnormality_breached']);
     });
 
     it('moves an unsupported panicked agent into trauma recovery after three turns', async () => {
@@ -1187,6 +1198,165 @@ describe('TLB facility torture test', () => {
   });
 
   describe('abnormality event-hook registry', () => {
+    it('delivers global and guild-scoped subscribers in registration order', () => {
+      const seen: string[] = [];
+      const unsubscribeGlobal = subscribeFacilityEvents((event, context) => {
+        seen.push(`global:${context.guildId}:${event.type}`);
+        return 'global message';
+      });
+      const unsubscribeGuild = subscribeFacilityEvents((event, context) => {
+        seen.push(`guild:${context.guildId}:${event.type}`);
+        return 'guild message';
+      }, { guildId: 'g_bus_a' });
+      const unsubscribeOther = subscribeFacilityEvents(() => {
+        seen.push('wrong guild');
+      }, { guildId: 'g_bus_b' });
+
+      try {
+        expect(emitFacilityEvent('g_bus_a', { type: 'day_started', day: 2 })).toEqual([
+          'global message',
+          'guild message'
+        ]);
+        expect(seen).toEqual([
+          'global:g_bus_a:day_started',
+          'guild:g_bus_a:day_started'
+        ]);
+      } finally {
+        unsubscribeGlobal();
+        unsubscribeGuild();
+        unsubscribeOther();
+      }
+
+      emitFacilityEvent('g_bus_a', { type: 'day_started', day: 3 });
+      expect(seen).toHaveLength(2);
+    });
+
+    it('uses a listener snapshot and isolates subscriber failures', () => {
+      const seen: string[] = [];
+      const originalConsoleError = console.error;
+      console.error = () => {};
+      let unsubscribeSecond = () => {};
+      const unsubscribeFirst = subscribeFacilityEvents(() => {
+        seen.push('first');
+        unsubscribeSecond();
+        throw new Error('listener failure');
+      });
+      unsubscribeSecond = subscribeFacilityEvents(() => {
+        seen.push('second');
+        return 'still delivered';
+      });
+
+      try {
+        expect(emitFacilityEvent('g_bus_snapshot', { type: 'day_ended', day: 1 })).toEqual(['still delivered']);
+        expect(seen).toEqual(['first', 'second']);
+        seen.length = 0;
+        expect(emitFacilityEvent('g_bus_snapshot', { type: 'day_ended', day: 2 })).toEqual([]);
+        expect(seen).toEqual(['first']);
+      } finally {
+        unsubscribeFirst();
+        unsubscribeSecond();
+        console.error = originalConsoleError;
+      }
+    });
+
+    it('routes facility events through abnormality hooks', () => {
+      const guildId = 'g_event_bus';
+      const scriptId = 'TEST-EVENT-HOOK';
+      seedAbnormality(guildId, { id: 2, name: 'Signal B', script_id: scriptId });
+      seedAbnormality(guildId, { id: 1, name: 'Signal A', script_id: scriptId });
+      seedAbnormality(guildId, { id: 3, name: 'Unknown', script_id: 'UNKNOWN-SCRIPT' });
+      seedAbnormality('g_event_bus_other', { id: 4, name: 'Other Guild', script_id: scriptId });
+      const recorded: Array<{ guildId: string; abnormalityId: number; eventType: string }> = [];
+      ABNORMALITY_SCRIPTS[scriptId] = {
+        onFacilityEvent: (event, context) => {
+          recorded.push({
+            guildId: context.guildId,
+            abnormalityId: Number(context.abnormality.id),
+            eventType: event.type
+          });
+          return `status:${event.type}:${context.abnormality.id}`;
+        }
+      };
+
+      try {
+        const messages = emitFacilityEvent(guildId, { type: 'phase_changed', from: 8, to: 9 });
+        expect(messages).toEqual(['status:phase_changed:1', 'status:phase_changed:2']);
+        expect(recorded).toEqual([
+          { guildId, abnormalityId: 1, eventType: 'phase_changed' },
+          { guildId, abnormalityId: 2, eventType: 'phase_changed' }
+        ]);
+      } finally {
+        delete ABNORMALITY_SCRIPTS[scriptId];
+      }
+    });
+
+    it('publishes Qliphoth and breach events when a meltdown timer expires', () => {
+      const guildId = 'g_bus_meltdown';
+      const facility = {
+        ...seedFacility(guildId),
+        meltdown_alarm: 1,
+        meltdown_targets: JSON.stringify([1])
+      };
+      seedAbnormality(guildId, {
+        id: 1,
+        name: 'Meltdown Target',
+        qliphoth: 2,
+        max_qliphoth: 2,
+        meltdown_timer: 1,
+        is_breaching: 0
+      });
+      const events: string[] = [];
+      const unsubscribe = subscribeFacilityEvents(event => {
+        if (event.type === 'qliphoth_changed') events.push(`${event.type}:${event.oldValue}->${event.newValue}`);
+        else events.push(event.type);
+      }, { guildId });
+
+      try {
+        const breached = __test.resolveMeltdownTimers(guildId, facility);
+        expect(breached).toHaveLength(1);
+        expect(events).toEqual(['qliphoth_changed:2->0', 'abnormality_breached']);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('publishes spontaneous breaches only to the affected guild', async () => {
+      const guildId = 'g_bus_spontaneous';
+      const facility = seedFacility(guildId, { phase: 20, security_level: 1 });
+      seedAbnormality(guildId, { id: 1, escape_chance: 1, is_breaching: 0, can_breach: 1 });
+      const events: string[] = [];
+      const unsubscribe = subscribeFacilityEvents(event => {
+        events.push(event.type);
+      }, { guildId });
+
+      try {
+        const breached = await withRandom([0], () => __test.maybeTriggerSpontaneousBreaches(guildId, facility));
+        expect(breached).toHaveLength(1);
+        expect(events).toEqual(['abnormality_breached']);
+        __test.maybeTriggerSpontaneousBreaches('g_bus_unrelated', facility);
+        expect(events).toEqual(['abnormality_breached']);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('lets Scorched Girl lose Qliphoth after a bad result context', async () => {
+      const abno: any = {
+        name: 'Scorched Girl', script_id: 'F-01-02', qliphoth: 2, max_qliphoth: 2,
+        can_breach: 1, is_breaching: 0
+      };
+      const note = await withRandom([0.1], () => ABNORMALITY_SCRIPTS['F-01-02']!.onWorkEnd?.(
+        {},
+        abno,
+        'attachment',
+        { result: 'bad', peBoxes: 0, neBoxes: 8, workLevel: 2, previousQliphoth: 2 }
+      ));
+
+      expect(abno.qliphoth).toBe(1);
+      expect(abno.is_breaching).toBe(0);
+      expect(note).toContain('MATCHLIGHT');
+    });
+
     it('blocks Nothing There for insufficient Fortitude', () => {
       const abno = { name: 'Nothing There', script_id: 'O-06-20' };
       const agent: any = { name: 'Rookie', fortitude: 2, hp: 100, status: 'idle' };
@@ -1204,7 +1374,7 @@ describe('TLB facility torture test', () => {
     });
 
     it('lets One Sin stabilize a panicked agent', () => {
-      const abno = { name: 'One Sin', script_id: 'F-01-02' };
+      const abno = { name: 'One Sin', script_id: 'O-03-03' };
       const agent: any = { name: 'Emu', status: 'panicked', sp: 0, max_sp: 100 };
       const result = bot.getAbnormalityScript(abno)?.onWorkStart?.(agent, abno, 'insight');
       expect(result?.cancelled).toBe(false);
@@ -1213,18 +1383,48 @@ describe('TLB facility torture test', () => {
     });
 
     it('lets Der Freischütz escalate rage after bad work', () => {
-      const abno: any = { name: 'Der Freischütz', script_id: 'T-06-27', rage: 2 };
-      const note = bot.getAbnormalityScript(abno)?.onWorkEnd?.({}, abno, 'repression', 'bad');
+      const abno: any = { name: 'Der Freischütz', script_id: 'F-01-69', qliphoth: 2, max_qliphoth: 2, rage: 2 };
+      const note = bot.getAbnormalityScript(abno)?.onWorkEnd?.({ justice: 4 }, abno, 'repression', 'bad');
+      expect(abno.qliphoth).toBe(1);
       expect(abno.rage).toBe(4);
-      expect(note).toContain('STRAY BULLET');
+      expect(note).toContain('MAGIC BULLET');
     });
 
     it('lets Schadenfreude react to repeated observation', () => {
-      const abno: any = { name: 'Schadenfreude', script_id: 'O-05-47', rage: 0 };
+      const abno: any = { name: 'Schadenfreude', script_id: 'O-05-76', qliphoth: 2, max_qliphoth: 2, rage: 0 };
       const agent = { assignments: 3 };
       const result = bot.getAbnormalityScript(abno)?.onWorkStart?.(agent, abno, 'insight');
       expect(result?.cancelled).toBe(false);
       expect(abno.rage).toBe(1);
+      expect(abno.qliphoth).toBe(1);
+    });
+
+    it('lets Happy Teddy Bear reject the same handler twice', () => {
+      const abno = { name: 'Happy Teddy Bear', script_id: 'T-04-06', last_worked_by: 'emu' };
+      const agent: any = { discord_id: 'emu', name: 'Emu', hp: 100, status: 'idle' };
+      const result = bot.getAbnormalityScript(abno)?.onWorkStart?.(agent, abno, 'attachment');
+
+      expect(result?.cancelled).toBe(true);
+      expect(agent.hp).toBe(0);
+      expect(agent.status).toBe('dead');
+    });
+
+    it('keeps Silent Orchestra stable on a normal result', () => {
+      const abno: any = { name: 'The Silent Orchestra', script_id: 'T-01-31', qliphoth: 2, max_qliphoth: 2 };
+      const note = bot.getAbnormalityScript(abno)?.onWorkEnd?.({}, abno, 'insight', 'normal');
+
+      expect(abno.qliphoth).toBe(2);
+      expect(note).toContain('INTERMISSION');
+    });
+
+    it('lets Funeral of the Dead Butterflies reject low Justice', () => {
+      const abno: any = { name: 'Funeral of the Dead Butterflies', script_id: 'T-01-68', qliphoth: 2, max_qliphoth: 2 };
+      const agent = { name: 'Rookie', justice: 2, fortitude: 2 };
+      const result = bot.getAbnormalityScript(abno)?.onWorkStart?.(agent, abno, 'repression');
+
+      expect(result?.cancelled).toBe(false);
+      expect(abno.qliphoth).toBe(1);
+      expect(result?.message).toContain('SOLEMN WARNING');
     });
 
     it('lets Judgement Bird execute an agent above its guilt threshold', () => {

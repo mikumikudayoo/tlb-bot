@@ -1,3 +1,5 @@
+import type { Database } from 'bun:sqlite';
+
 export type WorkType = 'instinct' | 'insight' | 'attachment' | 'repression';
 export type StatName = 'fortitude' | 'prudence' | 'temperance' | 'justice';
 export type DamageType = 'RED' | 'WHITE' | 'BLACK' | 'PALE';
@@ -98,10 +100,45 @@ export type AbnormalityRow = {
   script_id?: string;
 };
 
+export type WorkResult = 'good' | 'normal' | 'bad';
+
+export type WorkResultContext = {
+  result: WorkResult;
+  peBoxes: number;
+  neBoxes: number;
+  workLevel: number;
+  previousQliphoth: number;
+};
+
+export type FacilityEvent =
+  | { type: 'work_started'; agentId: string; abnormalityId: number; workType: WorkType }
+  | { type: 'work_finished'; agentId: string; abnormalityId: number; result: WorkResultContext }
+  | { type: 'agent_panicked'; agentId: string }
+  | { type: 'agent_died'; agentId: string }
+  | { type: 'abnormality_breached'; abnormalityId: number }
+  | { type: 'abnormality_suppressed'; abnormalityId: number }
+  | { type: 'qliphoth_changed'; abnormalityId: number; oldValue: number; newValue: number }
+  | { type: 'phase_changed'; from: number; to: number }
+  | { type: 'day_started'; day: number }
+  | { type: 'day_ended'; day: number };
+
+export type FacilityEventContext = {
+  guildId: string;
+  abnormality: any | null;
+  db: Database;
+  event: FacilityEvent;
+};
+
+export type FacilityEventListener = (
+  event: FacilityEvent,
+  context: FacilityEventContext
+) => string | null | void;
+
 export type AbnormalityScript = {
   onWorkStart?: (agent: any, abno: any, workType: WorkType) => { cancelled: boolean; message: string } | null;
-  onWorkEnd?: (agent: any, abno: any, workType: WorkType, result: 'good' | 'normal' | 'bad') => string | null;
+  onWorkEnd?: (agent: any, abno: any, workType: WorkType, resultOrContext: WorkResult | WorkResultContext) => string | null;
   onCombat?: (agent: any, abno: any, agentDamage: number) => { agentDamage: number; abnoDamage: number } | null;
+  onFacilityEvent?: FacilityEventListener;
 };
 
 export type GiftDef = {

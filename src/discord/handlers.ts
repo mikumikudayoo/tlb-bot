@@ -5,12 +5,42 @@
  * This keeps the Discord layer separated from core game logic and startup.
  */
 
-import { Client, Events, ButtonStyle, EmbedBuilder, ActionRowBuilder, ButtonBuilder } from 'discord.js';
+import { Client, Events } from 'discord.js';
+import { createInteractionHandlers } from './interactionHandlers';
 
 /**
  * Set up all Discord event handlers for the bot client.
  * This is called once during bot startup in index.ts.
  */
+export async function routeDiscordInteraction(interaction: any, gl: any): Promise<void> {
+  try {
+    if (!interaction.guildId || !interaction.guild) return;
+
+    const facility = gl.ensureFacility(interaction.guildId, interaction.user.id);
+    gl.seedAbnormalities(interaction.guildId);
+
+    const handlers = createInteractionHandlers(gl);
+
+    if (interaction.isChatInputCommand()) {
+      await handlers.handleCommand(interaction, facility);
+    } else if (interaction.isButton()) {
+      await handlers.handleButton(interaction, facility);
+    } else if (interaction.isStringSelectMenu()) {
+      await handlers.handleSelectMenu(interaction, facility);
+    }
+  } catch (err) {
+    console.error('Unhandled interaction error:', err);
+    if (interaction.isRepliable()) {
+      const errorMsg = '💥 an error occurred while executing that operation!';
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ content: errorMsg, ephemeral: true }).catch(() => {});
+      } else {
+        await interaction.reply({ content: errorMsg, ephemeral: true }).catch(() => {});
+      }
+    }
+  }
+}
+
 export function setupDiscordHandlers(client: Client, gameLogic: any): void {
   // Store reference to game logic for access in event handlers
   const gl = gameLogic;
@@ -32,30 +62,6 @@ export function setupDiscordHandlers(client: Client, gameLogic: any): void {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
-    try {
-      if (!interaction.guildId || !interaction.guild) return;
-
-      const facility = gl.ensureFacility(interaction.guildId, interaction.user.id);
-      gl.seedAbnormalities(interaction.guildId);
-
-      // Route to command or button handlers
-      if (interaction.isChatInputCommand()) {
-        await gl.handleCommand(interaction, facility);
-      } else if (interaction.isButton()) {
-        await gl.handleButton(interaction, facility);
-      } else if (interaction.isStringSelectMenu()) {
-        await gl.handleSelectMenu(interaction, facility);
-      }
-    } catch (err) {
-      console.error('Unhandled interaction error:', err);
-      if (interaction.isRepliable()) {
-        const errorMsg = '💥 an error occurred while executing that operation!';
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: errorMsg, ephemeral: true }).catch(() => {});
-        } else {
-          await interaction.reply({ content: errorMsg, ephemeral: true }).catch(() => {});
-        }
-      }
-    }
+    await routeDiscordInteraction(interaction, gl);
   });
 }
