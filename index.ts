@@ -11,7 +11,42 @@ import {
   StringSelectMenuOptionBuilder,
   User
 } from 'discord.js';
-import { Database } from 'bun:sqlite';
+import { clamp } from './src/utils/clamp';
+import { rand, pick } from './src/utils/random';
+import { json } from './src/utils/json';
+import { getWorkType } from './src/config/workTypes';
+import { db as facilityDb } from './src/db/database';
+import {
+  WORK_LEVEL_MAX,
+  BEHAVIOUR_INFO,
+  ABNORMALITY_TEMPLATES,
+  DAMAGE_TYPES,
+  EGO_GIFTS,
+  EGO_EQUIPMENT_SEED,
+  EGO_WEAPONS,
+  EGO_SUITS,
+  RISK_VALUES,
+  TRAITS,
+  getBehaviour,
+  getDisplayAbnormality,
+  getCurrentWorkAffinity,
+  getMeltdownState,
+  getShiftProfile,
+  getPanicBehaviorKey,
+  resolvePanicBehavior,
+  applyPanicState,
+  calculateWorkChance,
+  workQuality,
+  getPEBoxTotal,
+  nextPhase
+} from './src/game/logic';
+import { ABNORMALITY_SCRIPTS as externalAbnoScripts } from './src/game/abnormalities/scripts';
+import type { AbnormalityScript, DamageType, DepartmentName, GiftDef, PanicBehaviorKey, StatName, UpgradeType, WorkType } from './src/types/game';
+
+export const db = facilityDb;
+
+// Re-export key functions from src/game/logic.ts
+export { getShiftProfile, resolvePanicBehavior };
 
 // ==========================================
 // 🏢 LOBOTOMY CORPORATION — FACILITY SIM V2
@@ -21,297 +56,11 @@ import { Database } from 'bun:sqlite';
 // affinities and behaviour, days generate events, breaches create combat,
 // resources can be invested, and saves preserve the whole simulation state.
 
-const DATABASE_PATH = process.env.FACILITY_DB_PATH?.trim() || 'facility.sqlite';
-export const db = new Database(DATABASE_PATH, { create: true });
-
-type WorkType = 'instinct' | 'insight' | 'attachment' | 'repression';
-type StatName = 'fortitude' | 'prudence' | 'temperance' | 'justice';
-type DamageType = 'RED' | 'WHITE' | 'BLACK' | 'PALE';
-type DepartmentName = 'general' | 'control' | 'information' | 'security' | 'training' | 'command';
-type AgentStatus = 'idle' | 'working' | 'injured' | 'stressed' | 'panicked' | 'traumatized' | 'recovering' | 'dead';
-type UpgradeType = 'containment' | 'research' | 'security' | 'welfare';
-type Behaviour = 'docile' | 'possessive' | 'volatile' | 'predatory';
-type PanicBehaviorKey = 'wander' | 'breach_seeking' | 'lockdown' | 'hostile';
-
-type FacilityData = {
-  guild_id: string;
-  energy: number;
-  quota: number;
-  dictator_mode: number;
-  manager_id: string;
-  is_started: number;
-  is_paused: number;
-  day_count: number;
-  phase: number;
-  category_id: string | null;
-  control_channel_id?: string | null;
-  containment_channel_id: string | null;
-  status_channel_id?: string | null;
-  radio_channel_id?: string | null;
-  research: number;
-  lob_points: number;
-  containment_level: number;
-  security_level: number;
-  welfare_level: number;
-  event_seed: number;
-  stable_days: number;
-  current_sector?: string;
-};
-
-type AgentRow = {
-  discord_id: string;
-  guild_id: string;
-  name: string;
-  hp: number;
-  max_hp: number;
-  sp: number;
-  max_sp: number;
-  weapon: string;
-  suit: string;
-  status: AgentStatus;
-  level: number;
-  fortitude: number;
-  prudence: number;
-  temperance: number;
-  justice: number;
-  experience: number;
-  trait: string;
-  recovery_days: number;
-  assignments: number;
-  kills: number;
-  promotions: number;
-  ego_gifts?: string;
-  equipped_gift?: string;
-  department?: string;
-  auto_response?: string;
-  travel_origin?: string;
-  travel_destination?: string;
-  travel_remaining?: number;
-  panic_turns?: number;
-  panic_behavior?: string;
-};
-
-type AbnormalityRow = {
-  id: number;
-  guild_id: string;
-  name: string;
-  risk: string;
-  hp: number;
-  max_hp: number;
-  qliphoth: number;
-  max_qliphoth: number;
-  damage_type: string;
-  damage_amt: number;
-  is_breaching: number;
-  work_instinct: number;
-  work_insight: number;
-  work_attachment: number;
-  work_repression: number;
-  escape_chance: number;
-  behaviour: Behaviour;
-  description: string;
-  rage: number;
-  breaches: number;
-  suppressed_count: number;
-  last_worked_by?: string;
-  work_streak?: number;
-  gift_id?: string;
-  current_work_process?: string;
-  meltdown_timer?: number;
-  meltdown_state?: string;
-  can_breach?: number;
-  is_tool?: number;
-  script_id?: string;
-};
-
-type AbnormalityScript = {
-  onWorkStart?: (agent: any, abno: any, workType: WorkType) => { cancelled: boolean; message: string } | null;
-  onWorkEnd?: (agent: any, abno: any, workType: WorkType, result: 'good' | 'normal' | 'bad') => string | null;
-  onCombat?: (agent: any, abno: any, agentDamage: number) => { agentDamage: number; abnoDamage: number } | null;
-};
-
 const MAX_SAVE_SLOTS = 5;
 const SUPPRESSION_COOLDOWNS = new Map<string, number>();
 
-// Higher-risk containment can be pushed to deeper (riskier, higher-yield) work levels.
-const WORK_LEVEL_MAX: Record<string, number> = {
-  ZAYIN: 2,
-  TETH: 3,
-  HE: 4,
-  WAW: 4,
-  ALEPH: 4
-};
-
-// Behaviour is no longer flavor text — it changes how an abnormality reacts to
-// being worked, how it fights when it breaches, and how likely it is to escape
-// containment on its own.
-const BEHAVIOUR_INFO: Record<Behaviour, { icon: string; label: string; description: string }> = {
-  docile: {
-    icon: '🕊️',
-    label: 'docile',
-    description: 'calm and cooperative. rewards patient, consistent handling and rarely escalates on its own.'
-  },
-  possessive: {
-    icon: '💜',
-    label: 'possessive',
-    description: 'bonds to whoever works it most. grows fonder of a familiar face and resents being handed off.'
-  },
-  volatile: {
-    icon: '🌪️',
-    label: 'volatile',
-    description: 'unstable. swings hard between brilliant and disastrous work sessions, and breaches without warning.'
-  },
-  predatory: {
-    icon: '🦈',
-    label: 'predatory',
-    description: 'preys on weakness. grows bolder — and more dangerous — the worse shape its handler is in.'
-  }
-};
-
-function getBehaviour(abno: any): Behaviour {
-  return (BEHAVIOUR_INFO as any)[abno.behaviour] ? (abno.behaviour as Behaviour) : 'docile';
-}
-
-function getDisplayAbnormality(abno: any, allAbnos: any[] = []): any {
-  const isMasked = abno?.script_id === 'DO-NOT-TOUCH' || abno?.id === 'DO-NOT-TOUCH' || abno?.name === "Don't Touch Me" || abno?.name === 'Don\'t Touch Me';
-  if (!isMasked) return abno;
-
-  const decoys = (allAbnos ?? []).filter((entry: any) => {
-    const entryId = String(entry?.id ?? '');
-    const entryScript = String(entry?.script_id ?? '');
-    return entryId !== 'DO-NOT-TOUCH' && entryScript !== 'DO-NOT-TOUCH' && (entry?.name ?? '').trim() !== "Don't Touch Me" && (entry?.name ?? '').trim() !== 'Don\'t Touch Me';
-  });
-
-  if (!decoys.length) return abno;
-
-  const seed = String(abno?.id ?? abno?.name ?? 'dont-touch');
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  const decoy = decoys[hash % decoys.length];
-
-  return {
-    ...abno,
-    name: decoy.name,
-    risk: decoy.risk,
-    damage_type: decoy.damage_type,
-    description: decoy.description ?? abno.description,
-    spoofed_name: true,
-    real_name: abno.name
-  };
-}
-
-const WORK_TYPES: Record<WorkType, { stat: StatName; icon: string; label: string }> = {
-  instinct: { stat: 'fortitude', icon: 'Instinct', label: 'instinct' },
-  insight: { stat: 'prudence', icon: 'Insight', label: 'insight' },
-  attachment: { stat: 'temperance', icon: 'Attachment', label: 'attachment' },
-  repression: { stat: 'justice', icon: 'Repression', label: 'repression' }
-};
-
-function getWorkType(type: WorkType) {
-  return WORK_TYPES[type]!;
-}
-
-// ==========================================
-// 🧬 MANAGERIAL GUIDELINES — EVENT HOOKS
-// ==========================================
-// Each abnormality can have unique behavior via event hooks. Instead of hardcoding
-// every special rule into executeWork/combat, we use a registry of scripts that
-// run before/after standard actions or during combat.
-const ABNORMALITY_SCRIPTS: Record<string, AbnormalityScript> = {
-  'F-01-02': {
-    // One Sin and Hundreds of Good Deeds: cleanses mental strain and restores focus
-    onWorkStart: (agent: any, abno: any, workType: WorkType) => {
-      if (agent.status === 'stressed' || agent.status === 'panicked' || agent.status === 'traumatized') {
-        agent.status = 'idle';
-        agent.sp = Math.max(agent.sp, Math.floor(agent.max_sp * 0.7));
-        return {
-          cancelled: false,
-          message: `✨ **DIVINE ABSOLUTION:** ${abno.name} eases ${agent.name}'s mind, restoring ${Math.max(0, Math.floor(agent.max_sp * 0.7))} SP and washing away the emotional residue.`
-        };
-      }
-      return null;
-    }
-  },
-  'T-06-27': {
-    // Der Freischütz: repeated failed work triggers a stray shot as a dangerous escalation
-    onWorkEnd: (agent: any, abno: any, workType: WorkType, result: 'good' | 'normal' | 'bad') => {
-      if (result === 'bad') {
-        abno.rage = Math.min((abno.rage ?? 0) + 2, 10);
-        return `🎯 **STRAY BULLET:** ${abno.name} fires a wandering shot through the facility, rattling nearby staff and lowering the containment mood.`;
-      }
-      return null;
-    }
-  },
-  'O-05-47': {
-    // Schadenfreude: visibility rules amplify escape risk when attention is mishandled
-    onWorkStart: (agent: any, abno: any, workType: WorkType) => {
-      if (agent.assignments > 0 && (agent.assignments % 3 === 0)) {
-        abno.rage = Math.min((abno.rage ?? 0) + 1, 10);
-        return {
-          cancelled: false,
-          message: `👁️ **OBSERVED TOO LONG:** ${abno.name} grows more restless under scrutiny, and its escape pressure spikes with each repeated glance.`
-        };
-      }
-      return null;
-    }
-  },
-  'O-02-62': {
-    // Judgement Bird: guilt threshold triggers a severe execution penalty
-    onWorkStart: (agent: any, abno: any, workType: WorkType) => {
-      const guilt = (agent.kills ?? 0) + Math.max(0, 6 - (agent.fortitude ?? 0)) + (agent.assignments > 10 ? 2 : 0);
-      if (guilt >= 8) {
-        agent.status = 'dead';
-        agent.hp = 0;
-        return {
-          cancelled: true,
-          message: `🪶 **JUDGEMENT PASSED:** ${abno.name} sees ${agent.name} as irredeemable. The bird's verdict is swift and final.`
-        };
-      }
-      return null;
-    }
-  },
-  'DO-NOT-TOUCH': {
-    // Don't Touch Me: a troll anomaly that triggers a facility-wide breach the instant someone foolishly interacts with it.
-    onWorkStart: (agent: any, abno: any, workType: WorkType) => {
-      const guildId = agent?.guild_id ?? '';
-      if (guildId) {
-        db.query(`UPDATE abnormalities SET is_breaching = 1, rage = 10 WHERE guild_id = ?`).run(guildId);
-      }
-
-      agent.sp = 0;
-      applyPanicState(agent);
-
-      return {
-        cancelled: true,
-        message: `🛑 **████████ ERROR: CATASTROPHIC CONTAINMENT FAILURE ████████**\n\n*You shouldn't have touched that.*\n\n**${agent.name}** triggered **Don't Touch Me**. Every single containment unit in the facility has instantly blown its locks. Good luck. 🩸`
-      };
-    }
-  },
-  'O-06-20': {
-    // Nothing There: Instakill agents with insufficient Fortitude
-    onWorkStart: (agent: any, abno: any, workType: WorkType) => {
-      if (agent.fortitude < 4) {
-        agent.status = 'dead';
-        agent.hp = 0;
-        return {
-          cancelled: true,
-          message: `💀 **FATAL ERROR:** ${agent.name} did not have the Fortitude to comprehend Nothing There. The entity consumed their existence and left only an empty shell behind.`
-        };
-      }
-      return null;
-    }
-  },
-  'O-02-56': {
-    // Punishing Bird: Instakill any agent that attacks it while breaching
-    onCombat: (agent: any, abno: any, agentDamage: number) => {
-      agent.status = 'dead';
-      agent.hp = 0;
-      return { agentDamage: 0, abnoDamage: 9999 };
-    }
-  }
-};
+// ABNORMALITY_SCRIPTS is now loaded from externalAbnoScripts (src/game/abnormalities/scripts.ts)
+const ABNORMALITY_SCRIPTS: Record<string, AbnormalityScript> = externalAbnoScripts;
 
 const LOBOTOMY_EMOJIS = {
   work: { instinct: 'Instinct', insight: 'Insight', attachment: 'Attachment', repression: 'Repression' },
@@ -379,118 +128,7 @@ function buildCombatWarningRow(abnoId: string) {
   );
 }
 
-const RISK_VALUES: Record<string, number> = {
-  ZAYIN: 1,
-  TETH: 2,
-  HE: 3,
-  WAW: 4,
-  ALEPH: 5
-};
-
-const DAMAGE_TYPES: Record<DamageType, { label: string; icon: string; description: string }> = {
-  RED: { label: 'RED', icon: '🔴', description: 'Physical damage. High against low-defense, high-armor threats.' },
-  WHITE: { label: 'WHITE', icon: '⚪', description: 'Mental damage. Hits the abnormality’s mental fortitude and SP channel.' },
-  BLACK: { label: 'BLACK', icon: '⚫', description: 'Hybrid damage split between HP and SP.' },
-  PALE: { label: 'PALE', icon: '🩶', description: 'Percentage-based damage; scales off max HP.' }
-};
-
-const EGO_WEAPONS: Record<string, { name: string; type: DamageType; min: number; max: number; speed: number }> = {
-  riot_stick: { name: 'Riot Stick', type: 'RED', min: 2, max: 4, speed: 1.0 },
-  penitence: { name: 'Penitence', type: 'WHITE', min: 3, max: 5, speed: 1.05 },
-  mimicry: { name: 'Mimicry', type: 'RED', min: 12, max: 25, speed: 0.8 },
-  smile: { name: 'Smile', type: 'BLACK', min: 10, max: 20, speed: 0.9 }
-};
-
-const EGO_SUITS: Record<string, { name: string; red: number; white: number; black: number; pale: number; defense: number }> = {
-  basic_suit: { name: 'Basic Suit', red: 1.0, white: 1.0, black: 1.0, pale: 1.5, defense: 0 },
-  penitence_suit: { name: 'Penitence Suit', red: 0.9, white: 0.8, black: 1.0, pale: 1.5, defense: 1 },
-  mimicry_suit: { name: 'Mimicry Suit', red: 0.2, white: 0.4, black: 0.5, pale: 1.2, defense: 3 }
-};
-
-const TRAITS: Record<string, { name: string; description: string }> = {
-  energetic: { name: 'energetic', description: '+10% work consistency' },
-  cautious: { name: 'cautious', description: '-10% incoming damage' },
-  reckless: { name: 'reckless', description: '+15% combat damage, +10% incoming damage' },
-  lucky: { name: 'lucky', description: 'chance to create an extra PE box' },
-  calm: { name: 'calm', description: '+15% panic resistance' },
-  curious: { name: 'curious', description: '+10% insight success' }
-};
-
-// Each E.G.O. gift is a real trade: a stat payoff, and a drawback that's felt
-// every single work/combat resolution while it's equipped. Nothing is free.
-type GiftDef = {
-  id: string; name: string; icon: string; sourceAbno: string; drawback: string;
-  statBonus?: Partial<Record<StatName, number>>;
-  workChanceBonus?: Partial<Record<WorkType, number>>;
-  incomingDamageMult?: number;
-  maxSpMult?: number;
-};
-
-const ABNORMALITY_TEMPLATES = [
-  {
-    name: 'One Sin and Hundreds of Good Deeds', risk: 'ZAYIN', hp: 500, qliphoth: 3, damage_type: 'WHITE', damage_amt: 2,
-    instinct: 0.35, insight: 0.80, attachment: 0.60, repression: 0.20, escape_chance: 0.03,
-    behaviour: 'docile', description: 'A relatively safe abnormality that rewards patient observation.',
-    script_id: '', can_breach: 1, is_tool: 0,
-    gift: {
-      id: 'unwavering_gaze', name: 'Unwavering Gaze', icon: '👁️',
-      statBonus: { prudence: 2 },
-      workChanceBonus: { instinct: -0.08 },
-      drawback: '+2 prudence, but -8% instinct work chance — the gaze fixes on truth and stops noticing danger.'
-    } as Omit<GiftDef, 'sourceAbno'>
-  },
-  {
-    name: 'Beauty and the Beast', risk: 'TETH', hp: 800, qliphoth: 3, damage_type: 'BLACK', damage_amt: 6,
-    instinct: 0.45, insight: 0.40, attachment: 0.90, repression: 0.20, escape_chance: 0.10,
-    behaviour: 'possessive', description: 'Responds well to attachment but becomes volatile when mishandled.',
-    script_id: '', can_breach: 1, is_tool: 0,
-    gift: {
-      id: 'beasts_embrace', name: "Beast's Embrace", icon: '💗',
-      statBonus: { temperance: 2 },
-      maxSpMult: 0.90,
-      drawback: '+2 temperance, but -10% max SP — the embrace is warm and it does not let go easily.'
-    } as Omit<GiftDef, 'sourceAbno'>
-  },
-  {
-    name: 'Der Freischütz', risk: 'HE', hp: 1500, qliphoth: 3, damage_type: 'BLACK', damage_amt: 12,
-    instinct: 0.30, insight: 0.55, attachment: 0.35, repression: 0.85, escape_chance: 0.16,
-    behaviour: 'volatile', description: 'High output, high risk. Mistakes can destabilise containment quickly.',
-    script_id: '', can_breach: 1, is_tool: 0,
-    gift: {
-      id: 'true_shot', name: 'True Shot', icon: '🎯',
-      statBonus: { justice: 2 },
-      incomingDamageMult: 1.15,
-      drawback: '+2 justice, but +15% incoming damage — a perfect shot leaves you standing in the open.'
-    } as Omit<GiftDef, 'sourceAbno'>
-  },
-  {
-    name: 'Nothing There', risk: 'ALEPH', hp: 3000, qliphoth: 2, damage_type: 'RED', damage_amt: 30,
-    instinct: 0.55, insight: 0.35, attachment: 0.20, repression: 0.95, escape_chance: 0.30,
-    behaviour: 'predatory', description: 'An ALEPH-class threat capable of rapidly turning errors into disasters.',
-    script_id: 'O-06-20', can_breach: 1, is_tool: 0,
-    gift: {
-      id: 'vacant_resonance', name: 'Vacant Resonance', icon: '🕳️',
-      statBonus: { fortitude: 1, prudence: 1, temperance: 1, justice: 1 },
-      incomingDamageMult: 1.10,
-      drawback: '+1 to every stat, but +10% incoming damage from all sources — it does not distinguish friend from foe.'
-    } as Omit<GiftDef, 'sourceAbno'>
-  }
-];
-
-const EGO_GIFTS: Record<string, GiftDef> = {};
-for (const template of ABNORMALITY_TEMPLATES) {
-  const g = (template as any).gift as Omit<GiftDef, 'sourceAbno'> | undefined;
-  if (g) EGO_GIFTS[g.id] = { ...g, sourceAbno: template.name };
-}
-
-const EGO_EQUIPMENT_SEED: Array<{ id: string; category: 'weapon' | 'suit'; name: string; type?: DamageType; min?: number; max?: number; speed?: number; red?: number; white?: number; black?: number; pale?: number; defense?: number; description: string }> = [
-  { id: 'riot_stick', category: 'weapon', name: 'Riot Stick', type: 'RED', min: 2, max: 4, speed: 1.0, description: 'A simple, reliable blunt weapon used by trainees.' },
-  { id: 'penitence', category: 'weapon', name: 'Penitence', type: 'WHITE', min: 3, max: 5, speed: 1.05, description: 'A focused weapon that channels mental force.' },
-  { id: 'mimicry', category: 'weapon', name: 'Mimicry', type: 'RED', min: 12, max: 25, speed: 0.8, description: 'A high-output melee weapon with a sharp but risky profile.' },
-  { id: 'basic_suit', category: 'suit', name: 'Basic Suit', red: 1.0, white: 1.0, black: 1.0, pale: 1.5, defense: 0, description: 'The default issue suit used by new agents.' },
-  { id: 'penitence_suit', category: 'suit', name: 'Penitence Suit', red: 0.9, white: 0.8, black: 1.0, pale: 1.5, defense: 1, description: 'A light armor set tuned for mental resistance.' },
-  { id: 'mimicry_suit', category: 'suit', name: 'Mimicry Suit', red: 0.2, white: 0.4, black: 0.5, pale: 1.2, defense: 3, description: 'High-risk, high-reward armor that heavily reduces physical pressure.' }
-];
+// RISK_VALUES is now imported from src/game/logic.ts
 
 // ==========================================
 // 🗃️ DATABASE SCHEMA + LIGHTWEIGHT MIGRATIONS
@@ -860,22 +498,7 @@ db.query(`
 // ==========================================
 // 🛠️ HELPERS
 // ==========================================
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function rand(min: number, max: number) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function pick<T>(values: T[]): T {
-  return values[Math.floor(Math.random() * values.length)]!;
-}
-
-function json<T>(value: T): string {
-  return JSON.stringify(value);
-}
+// clamp, rand, pick, and json are now imported from src/utils/
 
 const FAVOR_LABELS = [
   { min: 0.00, label: 'Very Low' },
@@ -1102,28 +725,6 @@ function getPhaseLabel(phase: number) {
     16: 'Afternoon Shift', 18: 'Evening', 20: 'Overtime', 22: 'Emergency'
   };
   return labels[phase] ?? `${String(phase).padStart(2, '0')}:00`;
-}
-
-type ShiftProfile = {
-  label: string;
-  workChance: number;
-  damageMultiplier: number;
-  energyMultiplier: number;
-  breachMultiplier: number;
-};
-
-export function getShiftProfile(phase: number): ShiftProfile {
-  const profiles: Record<number, ShiftProfile> = {
-    8: { label: 'Morning', workChance: 0.04, damageMultiplier: 0.95, energyMultiplier: 1.00, breachMultiplier: 0.90 },
-    10: { label: 'Morning Shift', workChance: 0.02, damageMultiplier: 0.98, energyMultiplier: 1.05, breachMultiplier: 0.95 },
-    12: { label: 'Midday', workChance: 0.00, damageMultiplier: 1.00, energyMultiplier: 1.00, breachMultiplier: 1.00 },
-    14: { label: 'Afternoon', workChance: 0.02, damageMultiplier: 1.00, energyMultiplier: 1.05, breachMultiplier: 1.00 },
-    16: { label: 'Afternoon Shift', workChance: -0.01, damageMultiplier: 1.03, energyMultiplier: 1.10, breachMultiplier: 1.05 },
-    18: { label: 'Evening', workChance: -0.03, damageMultiplier: 1.08, energyMultiplier: 1.00, breachMultiplier: 1.10 },
-    20: { label: 'Overtime', workChance: -0.08, damageMultiplier: 1.15, energyMultiplier: 1.15, breachMultiplier: 1.25 },
-    22: { label: 'Emergency', workChance: -0.12, damageMultiplier: 1.25, energyMultiplier: 1.20, breachMultiplier: 1.45 }
-  };
-  return profiles[phase] ?? profiles[8]!;
 }
 
 function buildManagementTips(abno: any, agent: any) {
@@ -1562,39 +1163,7 @@ function maybeTriggerOrdeal(guildId: string, facility: any) {
   return false;
 }
 
-function getPanicBehaviorKey(agent: any): PanicBehaviorKey {
-  const highestStat = Object.entries({
-    fortitude: Number(agent?.fortitude ?? 0),
-    prudence: Number(agent?.prudence ?? 0),
-    temperance: Number(agent?.temperance ?? 0),
-    justice: Number(agent?.justice ?? 0)
-  }).sort((a, b) => Number(b[1]) - Number(a[1]))[0]?.[0] ?? 'fortitude';
-
-  if (highestStat === 'fortitude') return 'wander';
-  if (highestStat === 'prudence') return 'breach_seeking';
-  if (highestStat === 'temperance') return 'lockdown';
-  return 'hostile';
-}
-
-export function resolvePanicBehavior(agent: any): string {
-  if (!agent || (agent.sp > 0 && agent.status !== 'panicked')) return 'stable';
-  const behavior = (agent.panic_behavior || getPanicBehaviorKey(agent)) as PanicBehaviorKey;
-  if (behavior === 'wander') return 'wanders containment hallways and interferes with doors';
-  if (behavior === 'breach_seeking') return 'fixates on dangerous containment units and tries to release them';
-  if (behavior === 'lockdown') return 'refuses commands and disrupts department operations';
-  return 'becomes hostile toward nearby agents';
-}
-
-function applyPanicState(agent: any) {
-  if (!agent || agent.status === 'dead') return;
-  if (agent.sp <= 0) {
-    agent.sp = 0;
-    agent.status = 'panicked';
-    agent.recovery_days = Math.max(Number(agent.recovery_days ?? 0), 2);
-    if (!agent.panic_behavior) agent.panic_behavior = getPanicBehaviorKey(agent);
-    if (!Number(agent.panic_turns)) agent.panic_turns = 0;
-  }
-}
+// getPanicBehaviorKey, resolvePanicBehavior, applyPanicState are now imported from src/game/logic.ts
 
 function panicSupportChance(guildId: string, agent: any, facility: any) {
   const strongest = db.query(`
@@ -1724,25 +1293,7 @@ function seedAbnormalities(guildId: string) {
   }
 }
 
-function getCurrentWorkAffinity(abno: any, workType: WorkType) {
-  const key = `work_${workType}`;
-  return clamp(Number(abno[key] ?? 0.5), 0.05, 0.99);
-}
-
-function getMeltdownState(abno: any) {
-  if (!abno) return { icon: '🟢', label: 'stable', timer: 0, value: 1 };
-  const ratio = abno.max_qliphoth > 0 ? Number(abno.qliphoth) / Number(abno.max_qliphoth) : 1;
-  if (ratio <= 0.25) {
-    return { icon: '🔴', label: 'meltdown', timer: Math.max(0, Number(abno.meltdown_timer ?? 0)), value: ratio };
-  }
-  if (ratio <= 0.5) {
-    return { icon: '🟠', label: 'critical', timer: Math.max(0, Number(abno.meltdown_timer ?? 0)), value: ratio };
-  }
-  if (ratio <= 0.75) {
-    return { icon: '🟡', label: 'unstable', timer: Math.max(0, Number(abno.meltdown_timer ?? 0)), value: ratio };
-  }
-  return { icon: '🟢', label: 'stable', timer: Math.max(0, Number(abno.meltdown_timer ?? 0)), value: ratio };
-}
+// getCurrentWorkAffinity and getMeltdownState are now imported from src/game/logic.ts
 
 const DEPARTMENT_META: Record<string, { label: string; unlockSource: string; bonus: string }> = {
   control: { label: 'Control', unlockSource: 'initial assignment', bonus: '+4% work consistency' },
@@ -2024,68 +1575,8 @@ function formatMeltdownTimer(abno: any) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-function calculateWorkChance(agent: any, abno: any, workType: WorkType, facility: any, level: number = 1) {
-  const work = getWorkType(workType);
-  const stat = getEffectiveStat(agent, work.stat);
-  const affinity = getCurrentWorkAffinity(abno, workType);
-  const riskPenalty = (RISK_VALUES[abno.risk] ?? 1) * 0.035;
-  const facilityBonus = (Number(facility.research) / 100) * 0.015 + Number(facility.welfare_level) * 0.01;
-  const shift = getShiftProfile(Number(facility.phase));
-
-  let chance = 0.33 + stat * 0.045 + affinity * 0.28 + facilityBonus + shift.workChance - riskPenalty;
-
-  if (agent.trait === 'energetic') chance += 0.08;
-  if (agent.trait === 'curious' && workType === 'insight') chance += 0.10;
-  if (agent.trait === 'calm') chance += 0.02;
-
-  if (agent.status === 'stressed') chance -= 0.08;
-  if (agent.status === 'injured') chance -= 0.10;
-  if (agent.status === 'recovering') chance -= 0.15;
-
-  chance -= Number(abno.rage) * 0.015;
-
-  // pushing to a deeper work level is a deliberate gamble — each step down
-  // costs consistency in exchange for bigger PE box payouts.
-  chance -= (clamp(level, 1, 4) - 1) * 0.09;
-
-  const behaviour = getBehaviour(abno);
-  if (behaviour === 'docile') {
-    chance += 0.06;
-  } else if (behaviour === 'possessive') {
-    if (abno.last_worked_by && abno.last_worked_by === agent.discord_id) {
-      chance += Math.min(0.15, 0.05 + Number(abno.work_streak ?? 0) * 0.02);
-    } else if (abno.last_worked_by) {
-      chance -= 0.12;
-    }
-  } else if (behaviour === 'predatory') {
-    if (agent.status === 'injured' || agent.status === 'stressed') chance -= 0.10;
-  }
-  // volatile doesn't shift the baseline — its instability is applied as extra
-  // swing at the roll itself, in workQuality().
-
-  const gift = getGift(agent);
-  if (gift?.workChanceBonus?.[workType]) chance += gift.workChanceBonus[workType]!;
-
-  if (facility?.meltdown_alarm) chance -= 0.04;
-  chance += getDepartmentBonus(facility, 'control') + getDepartmentBonus(facility, 'information');
-
-  return clamp(chance, 0.05, 0.97);
-}
-
-function workQuality(chance: number, level: number = 1, behaviour: Behaviour = 'docile') {
-  let roll = Math.random();
-  if (behaviour === 'volatile') {
-    // volatile abnormalities swing the actual outcome roll itself, not just
-    // the odds — the same 60% chance can feel completely different twice in a row.
-    roll = clamp(roll + (Math.random() - 0.5) * 0.30, 0, 1);
-  }
-
-  const levelBonus = clamp(level, 1, 4) - 1;
-  if (roll < chance * 0.35) return { tier: 'good' as const, boxes: 2 + levelBonus + (Math.random() < chance ? 1 : 0) };
-  if (roll < chance) return { tier: 'normal' as const, boxes: 1 + Math.floor(levelBonus * 0.6) + (Math.random() < chance * 0.65 ? 1 : 0) };
-  if (roll < Math.min(0.99, chance + 0.18)) return { tier: 'bad' as const, boxes: Math.max(0, 1 - Math.floor(levelBonus * 0.5)) };
-  return { tier: 'critical' as const, boxes: 0 };
-}
+// calculateWorkChance, workQuality, and getPEBoxTotal are now imported from src/game/logic.ts
+// BUT renderPEProgress, buildPEVisualString, and formatWorkDamageTag are UI helpers that stay here
 
 function renderPEProgress(positive: number, negative: number, total = 12) {
   const safeTotal = Math.max(1, total);
@@ -2126,11 +1617,6 @@ function formatWorkDamageTag(baseDamage: number, actualDamage: number, type: str
   const sufferedRatio = baseDamage > 0 ? Number((actualDamage / baseDamage).toFixed(1)) : 0;
   const label = sufferedRatio >= 0.8 ? 'normal' : 'endured';
   return `${label} ${sufferedRatio.toFixed(1)} ${damageEmoji}`;
-}
-
-function getPEBoxTotal(abno: any) {
-  const riskWeight = RISK_VALUES[String(abno.risk)] ?? 1;
-  return clamp(5 + Math.max(0, riskWeight - 1), 5, 8);
 }
 
 async function sendBreachAlert(interaction: any, facility: any, abno: any) {
@@ -2583,14 +2069,7 @@ function agentStatusEmbed(agent: any, facility: any) {
   return embed;
 }
 
-function nextPhase(phase: number) {
-  const phases = [8, 10, 12, 14, 16, 18, 20, 22];
-  const index = phases.indexOf(phase);
-  if (index < 0) return 8;
-  // 22:00 is a hard stop. Only /end-day may reset the clock to 08:00.
-  if (index === phases.length - 1) return 22;
-  return phases[index + 1]!;
-}
+// nextPhase is now imported from src/game/logic.ts
 
 function resolveDailyRecovery(guildId: string) {
   const facility = db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any;
