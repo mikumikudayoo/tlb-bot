@@ -12,6 +12,8 @@ process.env.FACILITY_DB_PATH = ':memory:';
 process.env.DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'test-token';
 
 const { ABNORMALITY_SCRIPTS, emitFacilityEvent, subscribeFacilityEvents } = await import('../src/game/abnormalities/scripts');
+const { createDiscordClient } = await import('../src/discord/client');
+const { Events } = await import('discord.js');
 const bot = await import('../index.ts');
 const { db, __test } = bot;
 
@@ -118,6 +120,7 @@ function seedAgent(guildId: string, discordId: string, overrides: Record<string,
     assignments: 0,
     kills: 0,
     promotions: 0,
+    death_count: 0,
     ego_gifts: '[]',
     equipped_gift: '',
     department: 'control',
@@ -134,15 +137,15 @@ function seedAgent(guildId: string, discordId: string, overrides: Record<string,
     INSERT INTO agents (
       discord_id, guild_id, name, hp, max_hp, sp, max_sp, weapon, suit, status,
       level, fortitude, prudence, temperance, justice, experience, trait,
-      recovery_days, assignments, kills, promotions, ego_gifts, equipped_gift,
+      recovery_days, assignments, kills, promotions, death_count, ego_gifts, equipped_gift,
       department, auto_response, travel_origin, travel_destination,
       travel_remaining, panic_turns, panic_behavior
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     discordId, guildId, base.name, base.hp, base.max_hp, base.sp, base.max_sp,
     base.weapon, base.suit, base.status, base.level, base.fortitude, base.prudence,
     base.temperance, base.justice, base.experience, base.trait, base.recovery_days,
-    base.assignments, base.kills, base.promotions, base.ego_gifts, base.equipped_gift,
+    base.assignments, base.kills, base.promotions, base.death_count, base.ego_gifts, base.equipped_gift,
     base.department, base.auto_response, base.travel_origin, base.travel_destination,
     base.travel_remaining, base.panic_turns, base.panic_behavior
   );
@@ -1257,6 +1260,106 @@ describe('TLB facility torture test', () => {
         unsubscribeSecond();
         console.error = originalConsoleError;
       }
+    });
+
+    it('creates a bare Discord client without registering a second handler set', () => {
+      const testClient = createDiscordClient();
+      try {
+        expect(testClient.listenerCount(Events.ClientReady)).toBe(0);
+        expect(testClient.listenerCount(Events.InteractionCreate)).toBe(0);
+      } finally {
+        testClient.destroy();
+      }
+    });
+
+    it('encodes the initiating user into every work-prompt stage', () => {
+      const ownerId = '123456789012345678';
+      const selectId = __test.buildWorkPromptId('select', ownerId);
+      const typeId = __test.buildWorkPromptId('type', ownerId, 'insight', 42);
+      const levelRow = __test.buildLevelRow('insight', { id: 42, risk: 'TETH' }, ownerId).toJSON() as any;
+
+      expect(__test.parseWorkPromptId(selectId)).toEqual({ kind: 'select', ownerId, parts: [] });
+      expect(__test.parseWorkPromptId(typeId)).toEqual({ kind: 'type', ownerId, parts: ['insight', '42'] });
+      expect(levelRow.components.map((component: any) => component.custom_id)).toEqual([
+        `work:level:${ownerId}:insight:42:1`,
+        `work:level:${ownerId}:insight:42:2`,
+        `work:level:${ownerId}:insight:42:3`
+      ]);
+    });
+
+    it('rejects foreign and legacy work prompts without editing the owner prompt', async () => {
+      const ownerId = '123456789012345678';
+      const promptId = __test.buildWorkPromptId('level', ownerId, 'instinct', 7, 2);
+      expect(__test.getWorkPromptRejection(promptId, ownerId)).toBeNull();
+      expect(__test.getWorkPromptRejection(promptId, '999999999999999999')).toEqual({ ownerId });
+      expect(__test.getWorkPromptRejection('worklvl_instinct_7_2', ownerId)).toEqual({});
+
+      const replies: any[] = [];
+      await __test.rejectUnavailableWorkPrompt({
+        reply: async (payload: any) => { replies.push(payload); }
+      }, ownerId);
+
+      expect(replies).toHaveLength(1);
+      expect(replies[0].ephemeral).toBe(true);
+      expect(replies[0].content).toContain(`<@${ownerId}>`);
+    });
+
+    it('revives an agent after their first two deaths without losing progression', () => {
+      const guildId = 'g_agent_revival';
+      const agent = seedAgent(guildId, 'emu', { status: 'dead', hp: 0, level: 7, experience: 33 });
+
+      expect(__test.recordAgentDeath(guildId, agent)).toEqual({ deathCount: 1, wiped: false });
+      expect(__test.reviveAgent(agent)).toBe(true);
+      expect(agent).toMatchObject({ status: 'idle', hp: agent.max_hp, sp: agent.max_sp, level: 7, experience: 33, death_count: 1 });
+
+      agent.status = 'dead';
+      agent.hp = 0;
+      expect(__test.recordAgentDeath(guildId, agent)).toEqual({ deathCount: 2, wiped: false });
+      expect(__test.reviveAgent(agent)).toBe(true);
+
+      const stored = db.query(`SELECT * FROM agents WHERE guild_id=? AND discord_id=?`).get(guildId, 'emu') as any;
+      expect(stored).toMatchObject({ status: 'idle', level: 7, experience: 33, death_count: 2 });
+    });
+
+    it('wipes all personal agent data on the third death', () => {
+      const guildId = 'g_agent_third_death';
+      const agent = seedAgent(guildId, 'miku', { status: 'dead', hp: 0, death_count: 2 });
+      seedAgent(guildId, 'friend');
+      db.query(`INSERT INTO agent_abnormality_knowledge (guild_id, discord_id, abnormality_id) VALUES (?, ?, ?)`).run(guildId, 'miku', 1);
+      db.query(`INSERT INTO agent_work_history (guild_id, discord_id, day, phase, abnormality_id, abnormality_name, work_type, result) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(guildId, 'miku', 1, 8, 1, 'Test', 'insight', 'good');
+      db.query(`INSERT INTO agent_abnormality_observations (guild_id, discord_id, abnormality_id, work_type) VALUES (?, ?, ?, ?)`).run(guildId, 'miku', 1, 'insight');
+      db.query(`INSERT INTO agent_relationships (guild_id, from_discord_id, to_discord_id) VALUES (?, ?, ?)`).run(guildId, 'friend', 'miku');
+
+      expect(__test.recordAgentDeath(guildId, agent)).toEqual({ deathCount: 3, wiped: true });
+
+      expect(db.query(`SELECT COUNT(*) AS count FROM agents WHERE guild_id=? AND discord_id=?`).get(guildId, 'miku')).toEqual({ count: 0 });
+      expect(db.query(`SELECT COUNT(*) AS count FROM agent_abnormality_knowledge WHERE guild_id=? AND discord_id=?`).get(guildId, 'miku')).toEqual({ count: 0 });
+      expect(db.query(`SELECT COUNT(*) AS count FROM agent_work_history WHERE guild_id=? AND discord_id=?`).get(guildId, 'miku')).toEqual({ count: 0 });
+      expect(db.query(`SELECT COUNT(*) AS count FROM agent_abnormality_observations WHERE guild_id=? AND discord_id=?`).get(guildId, 'miku')).toEqual({ count: 0 });
+      expect(db.query(`SELECT COUNT(*) AS count FROM agent_relationships WHERE guild_id=? AND (from_discord_id=? OR to_discord_id=?)`).get(guildId, 'miku', 'miku')).toEqual({ count: 0 });
+      expect(db.query(`SELECT COUNT(*) AS count FROM agents WHERE guild_id=? AND discord_id=?`).get(guildId, 'friend')).toEqual({ count: 1 });
+    });
+
+    it('lets manager testing controls add, breach, contain, and reset an abnormality', () => {
+      const guildId = 'g_abno_testing';
+      const added = __test.runAbnormalityTestAction(guildId, 'add', 'T-01-31');
+      expect(added.ok).toBe(true);
+      expect(added.abnormality).toMatchObject({ name: 'T-01-31', script_id: 'T-01-31', is_breaching: 0 });
+
+      const registryOnly = __test.runAbnormalityTestAction(guildId, 'add', 'DO-NOT-TOUCH');
+      expect(registryOnly.ok).toBe(true);
+      expect(registryOnly.abnormality).toMatchObject({ name: 'DO-NOT-TOUCH', script_id: 'DO-NOT-TOUCH' });
+
+      const id = String(added.abnormality.id);
+      const breached = __test.runAbnormalityTestAction(guildId, 'breach', id);
+      expect(breached.abnormality).toMatchObject({ is_breaching: 1, qliphoth: 0, meltdown_state: 'breach' });
+
+      const contained = __test.runAbnormalityTestAction(guildId, 'contain', id);
+      expect(contained.abnormality).toMatchObject({ is_breaching: 0, qliphoth: contained.abnormality.max_qliphoth, meltdown_state: 'stable' });
+
+      db.query(`UPDATE abnormalities SET breaches=5, suppressed_count=4, work_streak=3 WHERE id=?`).run(Number(id));
+      const reset = __test.runAbnormalityTestAction(guildId, 'reset', id);
+      expect(reset.abnormality).toMatchObject({ is_breaching: 0, breaches: 0, suppressed_count: 0, work_streak: 0, rage: 0 });
     });
 
     it('routes facility events through abnormality hooks', () => {

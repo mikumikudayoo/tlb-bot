@@ -31,6 +31,7 @@ export function initializeSchema() {
       assignments INTEGER DEFAULT 0,
       kills INTEGER DEFAULT 0,
       promotions INTEGER DEFAULT 0,
+      death_count INTEGER DEFAULT 0,
       panic_turns INTEGER DEFAULT 0,
       panic_behavior TEXT DEFAULT '',
       PRIMARY KEY (guild_id, discord_id)
@@ -63,6 +64,7 @@ export function initializeSchema() {
         assignments INTEGER DEFAULT 0,
         kills INTEGER DEFAULT 0,
         promotions INTEGER DEFAULT 0,
+        death_count INTEGER DEFAULT 0,
         panic_turns INTEGER DEFAULT 0,
         panic_behavior TEXT DEFAULT '',
         PRIMARY KEY (guild_id, discord_id)
@@ -86,7 +88,7 @@ export function initializeSchema() {
     ['level', 'INTEGER DEFAULT 1'], ['fortitude', 'INTEGER DEFAULT 1'], ['prudence', 'INTEGER DEFAULT 1'],
     ['temperance', 'INTEGER DEFAULT 1'], ['justice', 'INTEGER DEFAULT 1'], ['experience', 'INTEGER DEFAULT 0'],
     ['trait', "TEXT DEFAULT 'calm'"], ['recovery_days', 'INTEGER DEFAULT 0'], ['assignments', 'INTEGER DEFAULT 0'],
-    ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'],
+    ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'], ['death_count', 'INTEGER DEFAULT 0'],
     ['ego_gifts', "TEXT DEFAULT '[]'"], ['equipped_gift', "TEXT DEFAULT ''"], ['department', "TEXT DEFAULT 'general'"], ['auto_response', "TEXT DEFAULT ''"],
     ['travel_origin', "TEXT DEFAULT ''"], ['travel_destination', "TEXT DEFAULT ''"], ['travel_remaining', 'INTEGER DEFAULT 0'],
     ['panic_turns', 'INTEGER DEFAULT 0'], ['panic_behavior', "TEXT DEFAULT ''"]

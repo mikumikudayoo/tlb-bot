@@ -1,10 +1,7 @@
 import { Client, GatewayIntentBits } from 'discord.js';
-import { setupDiscordHandlers } from './handlers';
 
-export function createDiscordClient(gameLogic: any): Client {
-  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-  setupDiscordHandlers(client, gameLogic);
-  return client;
+export function createDiscordClient(): Client {
+  return new Client({ intents: [GatewayIntentBits.Guilds] });
 }
 
 export function loginDiscordClient(client: Client, token?: string): Promise<string> | Client {

@@ -87,6 +87,28 @@ const commands = [
     .setDescription('manager only: restore HP/SP and remove panic from all living agents! 💖'),
 
   new SlashCommandBuilder()
+    .setName('abno-test')
+    .setDescription('manager only: add, breach, contain, or reset an abnormality for testing! 🧪')
+    .addStringOption(opt =>
+      opt
+        .setName('action')
+        .setDescription('testing action to perform')
+        .addChoices(
+          { name: '➕ add abnormality', value: 'add' },
+          { name: '🚨 force breach', value: 'breach' },
+          { name: '🔒 contain breach', value: 'contain' },
+          { name: '♻️ reset abnormality', value: 'reset' }
+        )
+        .setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt
+        .setName('abnormality')
+        .setDescription('abnormality name, database id, or script id')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
     .setName('upgrade')
     .setDescription('manager only: spend resources on a facility upgrade!')
     .addStringOption(opt =>
@@ -192,8 +214,20 @@ const commands = [
 ].map(cmd => cmd.toJSON());
 
 const token = process.env.DISCORD_TOKEN;
+const deployArgs = process.argv.slice(2);
+const guildId = deployArgs.find(arg => !arg.startsWith('--'))?.trim() || process.env.DISCORD_GUILD_ID?.trim();
+const guildOnly = deployArgs.includes('--guild-only');
+const globalOnly = deployArgs.includes('--global-only');
 if (!token) {
   console.error('❌ DISCORD_TOKEN environment variable is missing!');
+  process.exit(1);
+}
+if (guildOnly && globalOnly) {
+  console.error('❌ choose either --guild-only or --global-only, not both.');
+  process.exit(1);
+}
+if ((guildOnly || globalOnly) && !guildId) {
+  console.error('❌ a server ID is required when cleaning command scopes.');
   process.exit(1);
 }
 
@@ -205,13 +239,24 @@ const rest = new REST({ version: '10' }).setToken(token);
     const botUser = await rest.get(Routes.user()) as { id: string; username: string };
     console.log(`🤖 logged in as ${botUser.username} (${botUser.id})`);
 
-    console.log('🚀 registering application slash commands with discord...');
-    await rest.put(
-      Routes.applicationCommands(botUser.id),
-      { body: commands }
-    );
-
-    console.log('🎉 all slash commands registered successfully!! wonderhooi!! ✨');
+    if (guildOnly) {
+      console.log(`🚀 using server-only commands in ${guildId} and removing the duplicate global set...`);
+      await rest.put(Routes.applicationGuildCommands(botUser.id, guildId!), { body: commands });
+      await rest.put(Routes.applicationCommands(botUser.id), { body: [] });
+      console.log('🎉 server-only commands registered and global duplicates removed!! ✨');
+    } else if (globalOnly) {
+      console.log(`🚀 using global commands and removing the duplicate set from server ${guildId}...`);
+      await rest.put(Routes.applicationCommands(botUser.id), { body: commands });
+      await rest.put(Routes.applicationGuildCommands(botUser.id, guildId!), { body: [] });
+      console.log('🎉 global commands registered and server duplicates removed!! ✨');
+    } else if (guildId) {
+      console.error('❌ a global command set may already exist. rerun with --global-only or --guild-only to avoid duplicates.');
+      process.exitCode = 1;
+    } else {
+      console.log('🚀 registering global application slash commands with discord (propagation may take up to an hour)...');
+      await rest.put(Routes.applicationCommands(botUser.id), { body: commands });
+      console.log('🎉 global slash commands registered successfully!! discord may take up to an hour to show them ✨');
+    }
   } catch (error) {
     console.error('💥 error deploying slash commands:', error);
     process.exitCode = 1;

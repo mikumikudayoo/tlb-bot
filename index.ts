@@ -166,6 +166,7 @@ db.query(`
     assignments INTEGER DEFAULT 0,
     kills INTEGER DEFAULT 0,
     promotions INTEGER DEFAULT 0,
+    death_count INTEGER DEFAULT 0,
     panic_turns INTEGER DEFAULT 0,
     panic_behavior TEXT DEFAULT '',
     PRIMARY KEY (guild_id, discord_id)
@@ -200,6 +201,7 @@ if (agentPkInfo.find(c => c.name === 'discord_id')?.pk === 1 && !agentPkInfo.som
       assignments INTEGER DEFAULT 0,
       kills INTEGER DEFAULT 0,
       promotions INTEGER DEFAULT 0,
+      death_count INTEGER DEFAULT 0,
       panic_turns INTEGER DEFAULT 0,
       panic_behavior TEXT DEFAULT '',
       PRIMARY KEY (guild_id, discord_id)
@@ -232,7 +234,7 @@ for (const [column, definition] of [
   ['level', 'INTEGER DEFAULT 1'], ['fortitude', 'INTEGER DEFAULT 1'], ['prudence', 'INTEGER DEFAULT 1'],
   ['temperance', 'INTEGER DEFAULT 1'], ['justice', 'INTEGER DEFAULT 1'], ['experience', 'INTEGER DEFAULT 0'],
   ['trait', "TEXT DEFAULT 'calm'"], ['recovery_days', 'INTEGER DEFAULT 0'], ['assignments', 'INTEGER DEFAULT 0'],
-  ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'],
+  ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'], ['death_count', 'INTEGER DEFAULT 0'],
   ['ego_gifts', "TEXT DEFAULT '[]'"], ['equipped_gift', "TEXT DEFAULT ''"], ['department', "TEXT DEFAULT 'general'"], ['auto_response', "TEXT DEFAULT ''"],
   ['travel_origin', "TEXT DEFAULT ''"], ['travel_destination', "TEXT DEFAULT ''"], ['travel_remaining', 'INTEGER DEFAULT 0'],
   ['panic_turns', 'INTEGER DEFAULT 0'], ['panic_behavior', "TEXT DEFAULT ''"]
@@ -364,9 +366,52 @@ function publishAgentStatusTransition(guildId: string, previousStatus: string, a
   const currentStatus = String(agent?.status ?? '');
   const agentId = String(agent?.discord_id ?? agent?.id ?? agent?.name ?? '');
   if (!agentId || currentStatus === previousStatus) return currentStatus;
-  if (currentStatus === 'dead') publishFacilityEvent(guildId, { type: 'agent_died', agentId }, messages);
+  if (currentStatus === 'dead') {
+    publishFacilityEvent(guildId, { type: 'agent_died', agentId }, messages);
+    const outcome = recordAgentDeath(guildId, agent);
+    if (messages) {
+      messages.push(outcome.wiped
+        ? `🗑️ **${agent.name}'s agent data was wiped after their third death.** they may \`/join\` again as a fresh agent.`
+        : `🫀 **revival ${outcome.deathCount}/2 remains available.** use \`/join\` to revive with progression intact.`);
+    }
+  }
   if (currentStatus === 'panicked') publishFacilityEvent(guildId, { type: 'agent_panicked', agentId }, messages);
   return currentStatus;
+}
+
+function wipeAgentData(guildId: string, discordId: string) {
+  const wipe = db.transaction(() => {
+    db.query(`DELETE FROM agent_abnormality_knowledge WHERE guild_id=? AND discord_id=?`).run(guildId, discordId);
+    db.query(`DELETE FROM agent_work_history WHERE guild_id=? AND discord_id=?`).run(guildId, discordId);
+    db.query(`DELETE FROM agent_abnormality_observations WHERE guild_id=? AND discord_id=?`).run(guildId, discordId);
+    db.query(`DELETE FROM agent_relationships WHERE guild_id=? AND (from_discord_id=? OR to_discord_id=?)`).run(guildId, discordId, discordId);
+    db.query(`DELETE FROM agents WHERE guild_id=? AND discord_id=?`).run(guildId, discordId);
+  });
+  wipe();
+}
+
+function recordAgentDeath(guildId: string, agent: any) {
+  const deathCount = Math.max(0, Number(agent?.death_count ?? 0)) + 1;
+  agent.death_count = deathCount;
+  const wiped = deathCount >= 3;
+  if (wiped) {
+    agent.data_wiped = true;
+    wipeAgentData(guildId, String(agent.discord_id));
+  }
+  else db.query(`UPDATE agents SET death_count=? WHERE guild_id=? AND discord_id=?`).run(deathCount, guildId, agent.discord_id);
+  return { deathCount, wiped };
+}
+
+function reviveAgent(agent: any) {
+  if (!agent || agent.status !== 'dead' || Number(agent.death_count ?? 0) >= 3) return false;
+  agent.hp = agent.max_hp;
+  agent.sp = agent.max_sp;
+  agent.status = 'idle';
+  agent.recovery_days = 0;
+  agent.panic_turns = 0;
+  agent.panic_behavior = '';
+  updateAgent(agent);
+  return true;
 }
 
 function publishQliphothChange(
@@ -941,7 +986,7 @@ function updateAgent(agent: any) {
     UPDATE agents SET hp=?, max_hp=?, sp=?, max_sp=?, status=?, experience=?, level=?,
     fortitude=?, prudence=?, temperance=?, justice=?, trait=?, recovery_days=?, assignments=?, kills=?, promotions=?,
     ego_gifts=?, equipped_gift=?, department=?, auto_response=?, travel_origin=?, travel_destination=?, travel_remaining=?,
-    panic_turns=?, panic_behavior=?
+    panic_turns=?, panic_behavior=?, death_count=?
     WHERE discord_id=? AND guild_id=?
   `).run(
     agent.hp, agent.max_hp, agent.sp, agent.max_sp, agent.status, agent.experience, agent.level,
@@ -949,7 +994,7 @@ function updateAgent(agent: any) {
     agent.recovery_days, agent.assignments, agent.kills, agent.promotions,
     agent.ego_gifts ?? '[]', agent.equipped_gift ?? '', agent.department ?? 'control', agent.auto_response ?? '',
     agent.travel_origin ?? '', agent.travel_destination ?? '', Math.max(0, Number(agent.travel_remaining ?? 0)),
-    Math.max(0, Number(agent.panic_turns ?? 0)), String(agent.panic_behavior ?? ''),
+    Math.max(0, Number(agent.panic_turns ?? 0)), String(agent.panic_behavior ?? ''), Math.max(0, Number(agent.death_count ?? 0)),
     agent.discord_id, agent.guild_id
   );
 }
@@ -1166,6 +1211,7 @@ function resolvePanicPhase(guildId: string, facility: any) {
         publishAgentStatusTransition(guildId, previousStatus, target);
         action = `⚔️ **${agent.name}** lashed out at **${target.name}**, dealing **${damage} RED damage**.`;
         updateAgentRelationship(guildId, target.discord_id, agent.discord_id, -2);
+        if (target.data_wiped) wipeAgentData(guildId, target.discord_id);
       }
     }
 
@@ -1216,6 +1262,94 @@ function seedAbnormalities(guildId: string) {
       activeProcess, meltdownTimer, 'stable', (template as any).script_id ?? '', (template as any).can_breach ?? 1, (template as any).is_tool ?? 0
     );
   }
+}
+
+type AbnormalityTestAction = 'add' | 'breach' | 'contain' | 'reset';
+
+function findAbnormalityForTest(guildId: string, input: string) {
+  const query = input.trim();
+  if (!query) return null;
+  const numericId = Number(query);
+  if (Number.isInteger(numericId) && numericId > 0) {
+    const byId = db.query(`SELECT * FROM abnormalities WHERE guild_id=? AND id=?`).get(guildId, numericId) as any;
+    if (byId) return byId;
+  }
+  const normalized = query.toLowerCase();
+  const rows = db.query(`SELECT * FROM abnormalities WHERE guild_id=? ORDER BY id`).all(guildId) as any[];
+  return rows.find(row => String(row.name).toLowerCase() === normalized || String(row.script_id ?? '').toLowerCase() === normalized)
+    ?? rows.find(row => String(row.name).toLowerCase().includes(normalized))
+    ?? null;
+}
+
+function findAbnormalityTemplate(input: string) {
+  const normalized = input.trim().toLowerCase();
+  const configuredTemplate = ABNORMALITY_TEMPLATES.find(template =>
+    template.name.toLowerCase() === normalized || String((template as any).script_id ?? '').toLowerCase() === normalized
+  ) ?? ABNORMALITY_TEMPLATES.find(template => template.name.toLowerCase().includes(normalized)) ?? null;
+  if (configuredTemplate) return configuredTemplate;
+
+  const scriptId = Object.keys(ABNORMALITY_SCRIPTS).find(id => id.toLowerCase() === normalized);
+  if (!scriptId) return null;
+  return {
+    name: scriptId,
+    risk: 'HE',
+    hp: 1500,
+    qliphoth: 2,
+    damage_type: 'BLACK',
+    damage_amt: 12,
+    instinct: 0.5,
+    insight: 0.5,
+    attachment: 0.5,
+    repression: 0.5,
+    escape_chance: 0.15,
+    behaviour: 'volatile',
+    description: `Manager-generated testing instance for scripted abnormality ${scriptId}.`,
+    script_id: scriptId,
+    can_breach: 1,
+    is_tool: 0
+  } as const;
+}
+
+function runAbnormalityTestAction(guildId: string, action: AbnormalityTestAction, input: string) {
+  if (!['add', 'breach', 'contain', 'reset'].includes(action)) {
+    return { ok: false, message: `❌ unsupported abnormality test action: **${action}**.` };
+  }
+  if (action === 'add') {
+    const template = findAbnormalityTemplate(input);
+    if (!template) return { ok: false, message: `❌ no abnormality template matched **${input}**.` };
+    const giftId = (template as any).gift?.id ?? '';
+    const result = db.query(`
+      INSERT INTO abnormalities (
+        guild_id, name, risk, hp, max_hp, qliphoth, max_qliphoth, damage_type, damage_amt,
+        work_instinct, work_insight, work_attachment, work_repression, escape_chance, behaviour, description, gift_id,
+        current_work_process, meltdown_timer, meltdown_state, script_id, can_breach, is_tool
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      guildId, template.name, template.risk, template.hp, template.hp, template.qliphoth, template.qliphoth,
+      template.damage_type, template.damage_amt, template.instinct, template.insight, template.attachment,
+      template.repression, template.escape_chance, template.behaviour, template.description, giftId,
+      'instinct', 45, 'stable', (template as any).script_id ?? '', (template as any).can_breach ?? 1, (template as any).is_tool ?? 0
+    );
+    const abnormality = db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(Number(result.lastInsertRowid), guildId) as any;
+    return { ok: true, abnormality, message: `➕ added **${template.name}** as test abnormality **#${abnormality.id}**.` };
+  }
+
+  const abnormality = findAbnormalityForTest(guildId, input);
+  if (!abnormality) return { ok: false, message: `❌ no contained abnormality matched **${input}**.` };
+  const oldQliphoth = Number(abnormality.qliphoth ?? 0);
+
+  if (action === 'breach') {
+    db.query(`UPDATE abnormalities SET is_breaching=1, hp=max_hp, qliphoth=0, meltdown_state='breach', meltdown_timer=0, rage=10, breaches=breaches+1 WHERE id=? AND guild_id=?`).run(abnormality.id, guildId);
+    publishQliphothChange(guildId, Number(abnormality.id), oldQliphoth, 0);
+    publishFacilityEvent(guildId, { type: 'abnormality_breached', abnormalityId: Number(abnormality.id) });
+    return { ok: true, abnormality: findAbnormalityForTest(guildId, String(abnormality.id)), message: `🚨 forced **${abnormality.name} #${abnormality.id}** to breach.` };
+  }
+
+  const resetCounters = action === 'reset' ? ', breaches=0, suppressed_count=0, work_streak=0, last_worked_by=NULL' : '';
+  db.query(`UPDATE abnormalities SET is_breaching=0, hp=max_hp, qliphoth=max_qliphoth, meltdown_state='stable', meltdown_timer=45, rage=0${resetCounters} WHERE id=? AND guild_id=?`).run(abnormality.id, guildId);
+  publishQliphothChange(guildId, Number(abnormality.id), oldQliphoth, Number(abnormality.max_qliphoth ?? 0));
+  const verb = action === 'reset' ? 'reset' : 're-contained';
+  return { ok: true, abnormality: findAbnormalityForTest(guildId, String(abnormality.id)), message: `🔒 ${verb} **${abnormality.name} #${abnormality.id}**.` };
 }
 
 // getCurrentWorkAffinity and getMeltdownState are now imported from src/game/logic.ts
@@ -1575,12 +1709,42 @@ async function sendBreachAlert(interaction: any, facility: any, abno: any) {
   await containCh.send({ content: '@everyone', embeds: [breachEmbed], components: [row] });
 }
 
-function buildLevelRow(workType: WorkType, abno: any) {
+type WorkPromptKind = 'select' | 'type' | 'level';
+
+function buildWorkPromptId(kind: WorkPromptKind, ownerId: string, ...parts: Array<string | number>) {
+  return ['work', kind, ownerId, ...parts].join(':');
+}
+
+function parseWorkPromptId(customId: string): { kind: WorkPromptKind; ownerId: string; parts: string[] } | null {
+  const [prefix, rawKind, ownerId, ...parts] = customId.split(':');
+  if (prefix !== 'work' || !ownerId || !['select', 'type', 'level'].includes(rawKind ?? '')) return null;
+  return { kind: rawKind as WorkPromptKind, ownerId, parts };
+}
+
+function isLegacyWorkPromptId(customId: string) {
+  return customId === 'select_abno_work' || customId.startsWith('workbtn_') || customId.startsWith('worklvl_');
+}
+
+function getWorkPromptRejection(customId: string, userId: string): { ownerId?: string } | null {
+  if (isLegacyWorkPromptId(customId)) return {};
+  const prompt = parseWorkPromptId(customId);
+  if (prompt && prompt.ownerId !== userId) return { ownerId: prompt.ownerId };
+  return null;
+}
+
+async function rejectUnavailableWorkPrompt(interaction: any, ownerId?: string) {
+  const content = ownerId
+    ? `🔒 this work prompt belongs to <@${ownerId}>. use \`/work\` to open your own prompt!`
+    : '⌛ this work prompt predates the ownership update. use `/work` to open a fresh prompt!';
+  await interaction.reply({ content, ephemeral: true });
+}
+
+function buildLevelRow(workType: WorkType, abno: any, ownerId: string) {
   const maxLevel = WORK_LEVEL_MAX[abno.risk] ?? 2;
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     ...Array.from({ length: maxLevel }, (_, i) => i + 1).map(lvl =>
       new ButtonBuilder()
-        .setCustomId(`worklvl_${workType}_${abno.id}_${lvl}`)
+        .setCustomId(buildWorkPromptId('level', ownerId, workType, abno.id, lvl))
         .setLabel(`lv.${lvl}`)
         .setStyle(lvl === 1 ? ButtonStyle.Secondary : lvl === maxLevel ? ButtonStyle.Danger : ButtonStyle.Primary)
     )
@@ -1930,6 +2094,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   agent.hp = clamp(agent.hp, 0, agent.max_hp);
   agent.sp = clamp(agent.sp, 0, agent.max_sp);
   updateAgent(agent);
+  if (agent.data_wiped) wipeAgentData(interaction.guildId!, agent.discord_id);
 
   const bInfo = BEHAVIOUR_INFO[behaviour];
   const workEmoji = getGuildEmojiString(interaction.guild, getWorkType(workType).icon, getWorkType(workType).label);
@@ -2035,6 +2200,7 @@ function agentStatusEmbed(agent: any, facility: any) {
       { name: '📋 Assignments', value: `${agent.assignments}`, inline: true },
       { name: '💀 Kills', value: `${agent.kills}`, inline: true },
       { name: '🏅 Promotions', value: `${agent.promotions}`, inline: true },
+      { name: '🫀 Deaths', value: `${Number(agent.death_count ?? 0)}/3`, inline: true },
       { name: '🏢 Facility', value: `Day ${facility.day_count} · ${facility.energy}/${facility.quota} energy` }
     );
   return embed;
@@ -2184,15 +2350,15 @@ function restoreState(guildId: string, state: any) {
       INSERT INTO agents (
         discord_id, guild_id, name, hp, max_hp, sp, max_sp, weapon, suit, status, level, fortitude, prudence,
         temperance, justice, experience, trait, recovery_days, assignments, kills, promotions, ego_gifts, equipped_gift,
-        department, auto_response, travel_origin, travel_destination, travel_remaining, panic_turns, panic_behavior
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        department, auto_response, travel_origin, travel_destination, travel_remaining, panic_turns, panic_behavior, death_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       agent.discord_id, guildId, agent.name, agent.hp, agent.max_hp, agent.sp, agent.max_sp, agent.weapon, agent.suit,
       agent.status, agent.level, agent.fortitude, agent.prudence, agent.temperance, agent.justice, agent.experience,
       agent.trait, agent.recovery_days, agent.assignments, agent.kills, agent.promotions, agent.ego_gifts ?? '[]',
       agent.equipped_gift ?? '', agent.department ?? 'control', agent.auto_response ?? '', agent.travel_origin ?? '',
       agent.travel_destination ?? '', Math.max(0, Number(agent.travel_remaining ?? 0)), Math.max(0, Number(agent.panic_turns ?? 0)),
-      agent.panic_behavior ?? ''
+      agent.panic_behavior ?? '', Math.max(0, Number(agent.death_count ?? 0))
     );
   }
 
@@ -2349,27 +2515,7 @@ async function endDay(interaction: any, facility: any) {
 // 🤖 DISCORD CLIENT
 // ==========================================
 
-async function handleCommand(_interaction: any, _facility: any) {
-  return undefined;
-}
-
-async function handleButton(_interaction: any, _facility: any) {
-  return undefined;
-}
-
-async function handleSelectMenu(_interaction: any, _facility: any) {
-  return undefined;
-}
-
-const client = createDiscordClient({
-  db,
-  ensureFacility,
-  seedAbnormalities,
-  handleCommand,
-  handleButton,
-  handleSelectMenu,
-  ensureFacilityChannels
-});
+const client = createDiscordClient();
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`wonderhooi!! ✨ logged in as ${readyClient.user.tag}!`);
@@ -2393,6 +2539,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const facility = ensureFacility(interaction.guildId, interaction.user.id);
     seedAbnormalities(interaction.guildId);
+    const customId = String((interaction as any).customId ?? '');
+    const workPrompt = parseWorkPromptId(customId);
+    const workPromptRejection = getWorkPromptRejection(customId, interaction.user.id);
+
+    if ((interaction.isButton() || interaction.isStringSelectMenu()) && workPromptRejection) {
+      return rejectUnavailableWorkPrompt(interaction, workPromptRejection.ownerId);
+    }
 
     if (interaction.isChatInputCommand()) {
       const { commandName, user, guildId, guild } = interaction;
@@ -2401,6 +2554,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         adoptLegacyAgent(user.id, guildId);
         const existing = findAgent(user.id, guildId);
         if (existing) {
+          if (reviveAgent(existing)) {
+            logEvent(guildId, facility.day_count, facility.phase, 'revival', `${existing.name} was revived after death ${existing.death_count}.`);
+            return interaction.reply(
+              `🫀 welcome back, agent **${existing.name}**!! your progression has been restored.\n` +
+              `💀 deaths: **${existing.death_count}/3** — the third death wipes this agent's data.`
+            );
+          }
           return interaction.reply({ content: 'you are already an agent silly!! 🎀', ephemeral: true });
         }
 
@@ -2557,6 +2717,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.reply('💖 all living agents have been fully healed and stabilised!!');
       }
 
+      else if (commandName === 'abno-test') {
+        if (facility.manager_id !== user.id) {
+          return interaction.reply({ content: '🔒 only the facility manager can use abnormality testing controls!', ephemeral: true });
+        }
+        const action = interaction.options.getString('action', true) as AbnormalityTestAction;
+        const abnormalityInput = interaction.options.getString('abnormality', true);
+        const result = runAbnormalityTestAction(guildId, action, abnormalityInput);
+        if (!result.ok) return interaction.reply({ content: result.message, ephemeral: true });
+        logEvent(guildId, facility.day_count, facility.phase, 'manager_test', `${user.username}: ${result.message.replace(/\*\*/g, '')}`);
+        await interaction.reply(`${result.message}\n🧪 manager testing action: **${action}**`);
+      }
+
       else if (commandName === 'work') {
         if (!facility.is_started) return interaction.reply({ content: 'ask the manager to `/start-game`! 🚀', ephemeral: true });
         if (facility.is_paused) return interaction.reply({ content: '⏸️ facility operations are currently paused!', ephemeral: true });
@@ -2584,7 +2756,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const preview = levelPreviewText(agent, selected, workTypeInput, facility);
           return interaction.reply({
             content: `${getWorkType(workTypeInput).icon} **${getWorkType(workTypeInput).label}** on **${displayedSelected.name}**\n\nhow deep do you want to push it? higher levels increase payout potential but also increase the risk of a poor result.\n${preview}`,
-            components: [buildLevelRow(workTypeInput, selected)]
+            components: [buildLevelRow(workTypeInput, selected, user.id)]
           });
         }
 
@@ -2595,7 +2767,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
             ...(['instinct', 'insight', 'attachment', 'repression'] as WorkType[]).map(type =>
               new ButtonBuilder()
-                .setCustomId(`workbtn_${type}_${selected.id}`)
+                .setCustomId(buildWorkPromptId('type', user.id, type, selected.id))
                 .setLabel(`${getGuildEmojiString(interaction.guild, getWorkType(type).icon, getWorkType(type).label)} ${getWorkType(type).label}`)
                 .setStyle(type === 'instinct' ? ButtonStyle.Danger : type === 'insight' ? ButtonStyle.Primary : type === 'attachment' ? ButtonStyle.Secondary : ButtonStyle.Success)
             )
@@ -2652,7 +2824,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         const menu = new StringSelectMenuBuilder()
-          .setCustomId('select_abno_work')
+          .setCustomId(buildWorkPromptId('select', user.id))
           .setPlaceholder('select an abnormality to work on! ✨')
           .addOptions(abnos.map(a => {
             const displayedA = getDisplayAbnormality(a, abnos);
@@ -2891,7 +3063,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
     // ==========================================
     // 🧪 DROPDOWN WORK FLOW
     // ==========================================
-    if (interaction.isStringSelectMenu() && interaction.customId === 'select_abno_work') {
+    if (interaction.isStringSelectMenu() && workPrompt?.kind === 'select') {
       const guildId = interaction.guildId!;
       const facility = db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any;
       const abnoId = interaction.values[0]!;
@@ -2902,7 +3074,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         ...(['instinct', 'insight', 'attachment', 'repression'] as WorkType[]).map(type => {
           const emoji = getGuildEmojiObject(interaction.guild, getWorkType(type).icon);
           const builder = new ButtonBuilder()
-            .setCustomId(`workbtn_${type}_${abno.id}`)
+            .setCustomId(buildWorkPromptId('type', workPrompt.ownerId, type, abno.id))
             .setLabel(getWorkType(type).label)
             .setStyle(type === 'instinct' ? ButtonStyle.Danger : type === 'insight' ? ButtonStyle.Primary : type === 'attachment' ? ButtonStyle.Secondary : ButtonStyle.Success);
 
@@ -2939,8 +3111,8 @@ ${lines}`.slice(0, 1900), ephemeral: true });
       const guildId = interaction.guildId!;
       const facility = db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any;
 
-      if (interaction.customId.startsWith('workbtn_')) {
-        const [, rawType, abnoId] = interaction.customId.split('_');
+      if (workPrompt?.kind === 'type') {
+        const [rawType, abnoId] = workPrompt.parts;
         const workType = rawType as WorkType;
         const agent = findAgent(interaction.user.id, guildId);
         const abnormalityId = abnoId ?? '';
@@ -2952,12 +3124,12 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         const preview = levelPreviewText(agent, abno, workType, facility);
         return interaction.update({
           content: `${getGuildEmojiString(interaction.guild, getWorkType(workType).icon, getWorkType(workType).label)} **${getWorkType(workType).label}** on **${abno.name}** ${bInfo.icon}\n\nhow deep do you want to push it? higher levels pay more PE but hit your odds harder.\n${preview}`,
-          components: [buildLevelRow(workType, abno)]
+          components: [buildLevelRow(workType, abno, workPrompt.ownerId)]
         });
       }
 
-      if (interaction.customId.startsWith('worklvl_')) {
-        const [, rawType, abnoId, rawLevel] = interaction.customId.split('_');
+      if (workPrompt?.kind === 'level') {
+        const [rawType, abnoId, rawLevel] = workPrompt.parts;
         const workType = rawType as WorkType;
         const level = Number(rawLevel) || 1;
         const agent = findAgent(interaction.user.id, guildId);
@@ -3299,6 +3471,9 @@ export const __test = {
   panicSupportChance,
   resolvePanicPhase,
   seedAbnormalities,
+  findAbnormalityForTest,
+  findAbnormalityTemplate,
+  runAbnormalityTestAction,
   getCurrentWorkAffinity,
   getMeltdownState,
   getUnlockedDepartments,
@@ -3317,7 +3492,15 @@ export const __test = {
   runDailyEvent,
   maybeTriggerSpontaneousBreaches,
   serializeFacility,
-  restoreState
+  restoreState,
+  recordAgentDeath,
+  wipeAgentData,
+  reviveAgent,
+  buildWorkPromptId,
+  parseWorkPromptId,
+  getWorkPromptRejection,
+  rejectUnavailableWorkPrompt,
+  buildLevelRow
 };
 
 // Importing the module in a test process must never attempt a real Discord

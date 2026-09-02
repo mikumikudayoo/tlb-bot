@@ -56,6 +56,7 @@ export type AgentRow = {
   assignments: number;
   kills: number;
   promotions: number;
+  death_count?: number;
   ego_gifts?: string;
   equipped_gift?: string;
   department?: string;
