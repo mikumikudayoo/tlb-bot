@@ -45,9 +45,9 @@ export const RISK_VALUES: Record<string, number> = {
 };
 
 export const DAMAGE_TYPES: Record<DamageType, { label: string; icon: string; description: string }> = {
-  RED: { label: 'RED', icon: '🔴', description: 'Physical damage. High against low-defense, high-armor threats.' },
-  WHITE: { label: 'WHITE', icon: '⚪', description: 'Mental damage. Hits the abnormality’s mental fortitude and SP channel.' },
-  BLACK: { label: 'BLACK', icon: '⚫', description: 'Hybrid damage split between HP and SP.' },
+  RED: { label: 'RED', icon: '🔴', description: 'Physical damage to HP.' },
+  WHITE: { label: 'WHITE', icon: '⚪', description: 'Mental damage to agent SP; weapons damage enemy HP.' },
+  BLACK: { label: 'BLACK', icon: '⚫', description: 'Damage to both HP and SP, not divided between them.' },
   PALE: { label: 'PALE', icon: '🩶', description: 'Percentage-based damage; scales off max HP.' }
 };
 

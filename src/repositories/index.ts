@@ -7,6 +7,7 @@
  */
 
 import { db } from '../db/database';
+import { persistAgentExtensions } from '../game/progression';
 import { json } from '../utils/json';
 import { clamp } from '../utils/clamp';
 import { getWorkType } from '../config/workTypes';
@@ -254,16 +255,17 @@ export function updateAgent(agent: any) {
     SET hp=?, max_hp=?, sp=?, max_sp=?, status=?, level=?, fortitude=?, prudence=?,
         temperance=?, justice=?, experience=?, trait=?, recovery_days=?, assignments=?,
         kills=?, promotions=?, ego_gifts=?, equipped_gift=?, department=?, auto_response=?,
-        travel_origin=?, travel_destination=?, travel_remaining=?, panic_turns=?, panic_behavior=?, death_count=?
+        travel_origin=?, travel_destination=?, travel_remaining=?, panic_turns=?, panic_behavior=?, death_count=?, weapon=?, suit=?
     WHERE discord_id=? AND guild_id=?
   `).run(
     agent.hp, agent.max_hp, agent.sp, agent.max_sp, agent.status, agent.level,
     agent.fortitude, agent.prudence, agent.temperance, agent.justice, agent.experience,
     agent.trait, agent.recovery_days, agent.assignments, agent.kills, agent.promotions,
-    json(agent.ego_gifts ?? []), agent.equipped_gift, agent.department, agent.auto_response,
+    typeof agent.ego_gifts === 'string' ? agent.ego_gifts : json(agent.ego_gifts ?? []), agent.equipped_gift, agent.department, agent.auto_response,
     agent.travel_origin, agent.travel_destination, agent.travel_remaining,
-    agent.panic_turns, agent.panic_behavior, Math.max(0, Number(agent.death_count ?? 0)), agent.discord_id, agent.guild_id
+    agent.panic_turns, agent.panic_behavior, Math.max(0, Number(agent.death_count ?? 0)), agent.weapon ?? 'riot_stick', agent.suit ?? 'basic_suit', agent.discord_id, agent.guild_id
   );
+  persistAgentExtensions(agent);
 }
 
 // ==========================================
@@ -340,6 +342,7 @@ export function restoreState(guildId: string, stateJson: string): boolean {
     db.query(`UPDATE facility SET day_count=?, energy=?, quota=? WHERE guild_id = ?`).run(
       state.facility.day_count, state.facility.energy, state.facility.quota, guildId
     );
+    db.query('UPDATE facility SET progression=? WHERE guild_id=?').run(state.facility.progression ?? '{}', guildId);
 
     for (const agent of state.agents) {
       db.query(`
@@ -349,13 +352,14 @@ export function restoreState(guildId: string, stateJson: string): boolean {
           travel_origin, travel_destination, travel_remaining, panic_turns, panic_behavior, death_count)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        agent.discord_id, agent.guild_id, agent.name, agent.hp, agent.max_hp, agent.sp, agent.max_sp,
+        agent.discord_id, guildId, agent.name, agent.hp, agent.max_hp, agent.sp, agent.max_sp,
         agent.weapon, agent.suit, agent.status, agent.level, agent.fortitude, agent.prudence,
         agent.temperance, agent.justice, agent.experience, agent.trait, agent.recovery_days,
         agent.assignments, agent.kills, agent.promotions, agent.ego_gifts, agent.equipped_gift,
         agent.department, agent.auto_response, agent.travel_origin, agent.travel_destination,
         agent.travel_remaining, agent.panic_turns, agent.panic_behavior, Math.max(0, Number(agent.death_count ?? 0))
       );
+      persistAgentExtensions({ ...agent, guild_id: guildId });
     }
 
     for (const abno of state.abnormalities) {

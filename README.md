@@ -1,84 +1,51 @@
-# TLB Facility automated torture-test harness
+# TLB Discord facility bot
 
-This package is based on the current 3,772-line facility build.
+work abnormalities, manage agents, research gear and stims, and suppress emergencies.
 
-## What changed in `index.ts`
+## player documentation
 
-Only testability plumbing was added:
+read [the player guide](docs/PLAYER_GUIDE.md) for commands, stat and E.G.O. rules, ordeal stages, department quests, core challenges and differences from the supplied Tuantu guide.
 
-- `FACILITY_DB_PATH` can point the engine at `:memory:` or a temporary SQLite file.
-- `BOT_TEST_MODE=1` / `NODE_ENV=test` prevents a real Discord login when the module is imported by tests.
-- `__test` exposes the **real production helpers** to `bun:test`, so tests do not duplicate work/damage logic.
+## run locally
 
-Normal `bun run index.ts` behavior is unchanged when those test environment variables are not set.
+use Bun with the project's installed dependencies. provide DISCORD_TOKEN in a local .env; never commit it.
 
-## Install into your project
+```powershell
+bun run index.ts
+```
 
-Copy:
+the default database is facility.sqlite; FACILITY_DB_PATH selects another path. **back up your database before updating** and stop the bot before replacing code or making a consistent database backup. migrations add fields without deleting agents. restart to load new mechanics.
 
-- `index.ts` -> your project root `index.ts`
-- `deploy-commands.ts` -> your project root `deploy-commands.ts`
-- `tests/gameLogic.test.ts` -> `tests/gameLogic.test.ts`
+register the changed slash commands separately:
 
-`tests/_test-stubs.d.ts` is only used for the static TypeScript validation done while generating this package. You do **not** need it in a normal Bun project with real dependencies installed.
+```powershell
+bun run deploy-commands.ts YOUR_SERVER_ID --global-only
+```
 
-## Run
+this keeps global commands and removes duplicate server-local commands in the named server. for a dedicated test bot, --guild-only instead keeps commands in that server **and removes global commands everywhere**. do not switch scopes casually. deployment updates Discord registrations, not running bot code; restart the bot too.
 
-```bash
+## verification
+
+```powershell
+bunx tsc --noEmit
 bun test
+bun test tests/progression.test.ts
 ```
 
-Or only this suite:
+tests use an in-memory database and disable Discord login. bootstrap tests use isolated temporary databases. never point tests at production.
 
-```bash
-bun test tests/gameLogic.test.ts
-```
+- tests/gameLogic.test.ts covers production math, guild isolation, script events, panic, routing, saves, startup and prompt ownership.
+- tests/progression.test.ts covers point migration/caps, personal LOB, source-specific E.G.O., persistence, shields/research, department/core rules, ordeal progression and recruitment, including fake-interaction command checks.
 
-## What it covers
+new rules live in src/game/progression.ts and the command adapter in src/discord/progressionCommands.ts. the older engine is still partly in index.ts; this is not a complete monolith extraction.
 
-The suite tests the real engine for:
+## live smoke test after deployment
 
-- schema/table/column integrity
-- SQL `?` placeholder vs `.run(...)` argument mismatches
-- repeated schema bootstrap/migration safety
-- slash-command registration names
-- shift profiles and hard 22:00 stop
-- production damage calculations (RED/WHITE/BLACK/PALE)
-- traits and E.G.O. gift modifiers
-- EXP/level progression
-- real work success calculations and work-level risk
-- qualitative work favor
-- PE/NE display generation
-- per-agent abnormality knowledge
-- 2-PE work favor / 4-PE tips / 8-PE description unlocks
-- private work history and observation confidence
-- fake multiplayer relationships
-- panic behavior, support, containment interference, and recovery
-- quest-driven department unlock chain
-- travel duration and persistence
-- fake Discord category/channel repair and radio delivery
-- ambient radio persistence
-- meltdowns and timer breaches
-- ordeals
-- daily events
-- spontaneous breach eligibility
-- daily reset state
-- deep serialization/restoration
-- memory checkpoint retention and rewind
-- abnormality event hooks
+1. /join, /stats, /lob stat:fortitude at 08:00.
+2. /work through the owner-bound prompts; inspect /stats and /info.
+3. fully observe a source, buy and re-equip /ego item:penitence, restart and check /status.
+4. exercise /research, /stim, /core and /ordeal in a test facility.
+5. view /recruit twice, accept once, verify a second acceptance is rejected.
+6. /save, change progression, /load, verify personal and facility state.
 
-## Still requires a real Discord smoke test
-
-Automation cannot fully prove Discord's external behavior. After this suite passes, manually smoke-test:
-
-1. `/join`
-2. `/start-game`
-3. `/work` through dropdown -> work type -> level buttons
-4. `/info` and its three buttons
-5. `/radio mode:test`
-6. `/departments` and `/travel`
-7. one real suppression button
-8. `/save`, mutate state, `/load`
-9. restart the bot and verify channels were not duplicated
-
-Those are mostly Discord API/UI checks; the engine underneath them is covered here.
+automated tests cannot verify live Discord command propagation, cached menus or channel permissions. no live deployment is performed by tests. the player guide explicitly marks simplified encounters and details absent from the supplied source.

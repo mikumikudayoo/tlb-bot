@@ -16,6 +16,7 @@ import { json } from '../utils/json';
 import { clamp } from '../utils/clamp';
 import { rand, pick } from '../utils/random';
 import type { DepartmentName, WorkType } from '../types/game';
+import { startOrdeal } from './progression';
 
 // ==========================================
 // 🚶 TRAVEL & DEPARTMENT ROUTING
@@ -27,7 +28,8 @@ export const DEPARTMENT_SECTORS: Record<DepartmentName, string> = {
   information: 'information-dept',
   security: 'security-dept',
   training: 'training-dept',
-  command: 'central-command'
+  command: 'central-command', disciplinary: 'disciplinary-dept', welfare: 'welfare-dept',
+  extraction: 'extraction-dept', record: 'record-dept'
 };
 
 export const DEPARTMENT_CHAIN: DepartmentName[] = ['control', 'information', 'security', 'training', 'command'];
@@ -275,22 +277,10 @@ export function maybeTriggerSpontaneousBreaches(guildId: string, facility: any):
 // 🏛️ ORDEALS
 // ==========================================
 
-export const ORDEAL_STAGES = [
-  { threshold: 150, color: 'amber', label: 'Amber Ordeal' },
-  { threshold: 300, color: 'crimson', label: 'Crimson Ordeal' },
-  { threshold: 500, color: 'green', label: 'Green Ordeal' }
-] as const;
+export { ORDEAL_STAGES } from './progression';
 
 export function maybeTriggerOrdeal(guildId: string, facility: any) {
-  if (!facility || facility.ordeal_active) return false;
-  for (const stage of ORDEAL_STAGES) {
-    if (Number(facility.energy) >= stage.threshold) {
-      const color = stage.color;
-      const expiresAt = Date.now() + 60000;
-      db.query(`UPDATE facility SET ordeal_active=1, active_ordeal=?, ordeal_timer=? WHERE guild_id=?`).run(color, expiresAt, guildId);
-      db.query(`INSERT INTO ordeal_events (guild_id, color, threshold, active, expires_at) VALUES (?, ?, ?, 1, ?)`).run(guildId, color, stage.threshold, expiresAt);
-      return true;
-    }
-  }
-  return false;
+  if (!facility) return false;
+  const current = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
+  return current ? startOrdeal(current) : false;
 }

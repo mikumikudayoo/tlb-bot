@@ -1,6 +1,11 @@
 import { REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { helpCommand } from './src/discord/helpCommand';
+
+const departmentChoices = ['control', 'information', 'training', 'security', 'command', 'disciplinary', 'welfare', 'extraction', 'record']
+  .map(value => ({ name: value, value }));
 
 const commands = [
+  helpCommand,
   new SlashCommandBuilder()
     .setName('join')
     .setDescription('join the facility as a new agent!'),
@@ -18,8 +23,67 @@ const commands = [
     .setDescription('view your current agent status, facility stats, and active threats!'),
 
   new SlashCommandBuilder()
+    .setName('stats')
+    .setDescription('view your four work stats and their current training limit!'),
+
+  new SlashCommandBuilder()
+    .setName('lob')
+    .setDescription('spend LOB points to raise one stat by 5!')
+    .addStringOption(opt => opt
+      .setName('stat')
+      .setDescription('stat to increase')
+      .addChoices(
+        { name: 'fortitude', value: 'fortitude' },
+        { name: 'prudence', value: 'prudence' },
+        { name: 'temperance', value: 'temperance' },
+        { name: 'justice', value: 'justice' }
+      )
+      .setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('stim')
+    .setDescription('use a researched stim or shield charge!')
+    .addStringOption(opt => opt
+      .setName('type')
+      .setDescription('stim to use')
+      .addChoices(
+        { name: 'health', value: 'health' },
+        { name: 'sanity', value: 'sanity' },
+        { name: 'red shield', value: 'red' },
+        { name: 'white shield', value: 'white' },
+        { name: 'black shield', value: 'black' },
+        { name: 'pale shield', value: 'pale' }
+      )
+      .setRequired(true)),
+
+  new SlashCommandBuilder()
     .setName('facility')
     .setDescription('view the full facility dashboard!'),
+
+  new SlashCommandBuilder()
+    .setName('research')
+    .setDescription('manager: research stims, shields or expanded stat limits')
+    .addStringOption(opt => opt.setName('project').setDescription('omit to list projects').addChoices(
+      { name: 'Welfare stims', value: 'welfare_stims' },
+      { name: 'Command shields', value: 'command_shields' },
+      { name: '150-point stat limits', value: 'extended_stats' }
+    )),
+
+  new SlashCommandBuilder()
+    .setName('core')
+    .setDescription('manager: inspect or start a department core challenge')
+    .addStringOption(opt => opt.setName('department').setDescription('omit to inspect; choose to start').addChoices(...departmentChoices)),
+
+  new SlashCommandBuilder()
+    .setName('ordeal')
+    .setDescription('inspect or fight the active ordeal')
+    .addStringOption(opt => opt.setName('action').setDescription('omit to inspect').addChoices({ name: 'fight', value: 'fight' })),
+
+  new SlashCommandBuilder()
+    .setName('recruit')
+    .setDescription('manager: choose one of three abnormalities, once per day')
+    .addIntegerOption(opt => opt.setName('choice').setDescription('omit to view the three offers').setMinValue(1).setMaxValue(3))
+    .addStringOption(opt => opt.setName('department').setDescription('unlocked containment sector; defaults to control').addChoices(...departmentChoices)),
 
   new SlashCommandBuilder()
     .setName('work')
@@ -73,6 +137,14 @@ const commands = [
         .setDescription('gift name to equip, or "none" to unequip')
         .setRequired(true)
     ),
+
+  new SlashCommandBuilder()
+    .setName('ego')
+    .setDescription('inspect or purchase unlocked E.G.O. equipment!')
+    .addStringOption(opt => opt
+      .setName('item')
+      .setDescription('equipment name or ID; leave blank to list the catalogue')
+      .setRequired(false)),
 
   new SlashCommandBuilder()
     .setName('end-day')
@@ -162,19 +234,13 @@ const commands = [
       opt
         .setName('department')
         .setDescription('department to move to')
-        .addChoices(
-          { name: 'Control', value: 'control' },
-          { name: 'Information', value: 'information' },
-          { name: 'Security', value: 'security' },
-          { name: 'Training', value: 'training' },
-          { name: 'Central Command', value: 'command' }
-        )
+        .addChoices(...departmentChoices)
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('train')
-    .setDescription('manager only: train an agent using facility resources!')
+    .setDescription('manager: train an agent by 5 points using their personal LOB at 08:00')
     .addUserOption(opt =>
       opt
         .setName('agent')

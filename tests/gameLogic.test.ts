@@ -1040,13 +1040,15 @@ describe('TLB facility torture test', () => {
       expect(abno.meltdown_state).toBe('breach');
     });
 
-    it('triggers the first ordeal once the energy threshold is reached', () => {
+    it('triggers Dawn at the first meltdown, not an energy threshold', () => {
       const guildId = 'g_ordeal';
       const facility = seedFacility(guildId, { energy: 150 });
+      expect(__test.maybeTriggerOrdeal(guildId, facility)).toBe(false);
+      db.query('UPDATE facility SET progression=? WHERE guild_id=?').run(JSON.stringify({ meltdown: 1 }), guildId);
       expect(__test.maybeTriggerOrdeal(guildId, facility)).toBe(true);
       const fresh = db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any;
       expect(fresh.ordeal_active).toBe(1);
-      expect(fresh.active_ordeal).toBe('amber');
+      expect(fresh.active_ordeal).toMatch(/^dawn:(amber|crimson|green|violet)$/);
       expect(__test.maybeTriggerOrdeal(guildId, fresh)).toBe(false);
     });
 

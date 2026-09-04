@@ -3,7 +3,7 @@ import type { Database } from 'bun:sqlite';
 export type WorkType = 'instinct' | 'insight' | 'attachment' | 'repression';
 export type StatName = 'fortitude' | 'prudence' | 'temperance' | 'justice';
 export type DamageType = 'RED' | 'WHITE' | 'BLACK' | 'PALE';
-export type DepartmentName = 'general' | 'control' | 'information' | 'security' | 'training' | 'command';
+export type DepartmentName = 'general' | 'control' | 'information' | 'security' | 'training' | 'command' | 'disciplinary' | 'welfare' | 'extraction' | 'record';
 export type AgentStatus = 'idle' | 'working' | 'injured' | 'stressed' | 'panicked' | 'traumatized' | 'recovering' | 'dead';
 export type UpgradeType = 'containment' | 'research' | 'security' | 'welfare';
 export type Behaviour = 'docile' | 'possessive' | 'volatile' | 'predatory';
@@ -57,6 +57,7 @@ export type AgentRow = {
   kills: number;
   promotions: number;
   death_count?: number;
+  progression?: string;
   ego_gifts?: string;
   equipped_gift?: string;
   department?: string;
@@ -66,6 +67,13 @@ export type AgentRow = {
   travel_remaining?: number;
   panic_turns?: number;
   panic_behavior?: string;
+  stat_limit?: number;
+  pe_boxes?: number;
+  stim_charges?: string;
+  shield_red?: number;
+  shield_white?: number;
+  shield_black?: number;
+  shield_pale?: number;
 };
 
 export type AbnormalityRow = {

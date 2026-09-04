@@ -1,4 +1,5 @@
 import { db } from './database';
+import { initializeProgressionSchema } from '../game/progression';
 
 export function addColumnIfMissing(table: string, column: string, definition: string) {
   const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
@@ -91,7 +92,11 @@ export function initializeSchema() {
     ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'], ['death_count', 'INTEGER DEFAULT 0'],
     ['ego_gifts', "TEXT DEFAULT '[]'"], ['equipped_gift', "TEXT DEFAULT ''"], ['department', "TEXT DEFAULT 'general'"], ['auto_response', "TEXT DEFAULT ''"],
     ['travel_origin', "TEXT DEFAULT ''"], ['travel_destination', "TEXT DEFAULT ''"], ['travel_remaining', 'INTEGER DEFAULT 0'],
-    ['panic_turns', 'INTEGER DEFAULT 0'], ['panic_behavior', "TEXT DEFAULT ''"]
+    ['panic_turns', 'INTEGER DEFAULT 0'], ['panic_behavior', "TEXT DEFAULT ''"],
+    ['stat_limit', 'INTEGER DEFAULT 100'], ['pe_boxes', 'INTEGER DEFAULT 0'],
+    ['stim_charges', "TEXT DEFAULT '{\"health\":2,\"sanity\":2,\"red\":1,\"white\":1,\"black\":1,\"pale\":0}'"],
+    ['shield_red', 'INTEGER DEFAULT 0'], ['shield_white', 'INTEGER DEFAULT 0'],
+    ['shield_black', 'INTEGER DEFAULT 0'], ['shield_pale', 'INTEGER DEFAULT 0']
   ] as const) addColumnIfMissing('agents', column, definition);
 
   db.query(`UPDATE agents SET department='control' WHERE department IS NULL OR department='' OR department='general'`).run();
@@ -339,6 +344,7 @@ export function initializeSchema() {
     )
   `).run();
 
+  initializeProgressionSchema();
 }
 
 initializeSchema();

@@ -17,6 +17,9 @@ import { json } from './src/utils/json';
 import { getWorkType } from './src/config/workTypes';
 import { db as facilityDb } from './src/db/database';
 import * as repositories from './src/repositories';
+import * as Progression from './src/game/progression';
+import { PROGRESSION_COMMANDS, handleProgressionCommand } from './src/discord/progressionCommands';
+import { handleHelpCommand } from './src/discord/helpCommand';
 import { createDiscordClient, loginDiscordClient } from './src/discord/client';
 import {
   WORK_LEVEL_MAX,
@@ -84,11 +87,6 @@ const OBSERVATION_LEVELS = [
   { level: 4, title: 'institutional memory', description: 'deeper records and E.G.O gift access' }
 ] as const;
 
-const ORDEAL_STAGES = [
-  { threshold: 150, color: 'amber', label: 'Amber Ordeal' },
-  { threshold: 300, color: 'crimson', label: 'Crimson Ordeal' },
-  { threshold: 500, color: 'green', label: 'Green Ordeal' }
-] as const;
 
 const DEPARTMENT_SECTORS: Record<DepartmentName, string> = {
   general: 'central-command',
@@ -96,7 +94,8 @@ const DEPARTMENT_SECTORS: Record<DepartmentName, string> = {
   information: 'information-dept',
   security: 'security-dept',
   training: 'training-dept',
-  command: 'central-command'
+  command: 'central-command', disciplinary: 'disciplinary-dept', welfare: 'welfare-dept',
+  extraction: 'extraction-dept', record: 'record-dept'
 };
 
 function getGuildEmojiObject(guild: any, emojiName: string) {
@@ -237,7 +236,11 @@ for (const [column, definition] of [
   ['kills', 'INTEGER DEFAULT 0'], ['promotions', 'INTEGER DEFAULT 0'], ['death_count', 'INTEGER DEFAULT 0'],
   ['ego_gifts', "TEXT DEFAULT '[]'"], ['equipped_gift', "TEXT DEFAULT ''"], ['department', "TEXT DEFAULT 'general'"], ['auto_response', "TEXT DEFAULT ''"],
   ['travel_origin', "TEXT DEFAULT ''"], ['travel_destination', "TEXT DEFAULT ''"], ['travel_remaining', 'INTEGER DEFAULT 0'],
-  ['panic_turns', 'INTEGER DEFAULT 0'], ['panic_behavior', "TEXT DEFAULT ''"]
+  ['panic_turns', 'INTEGER DEFAULT 0'], ['panic_behavior', "TEXT DEFAULT ''"],
+  ['stat_limit', 'INTEGER DEFAULT 100'], ['pe_boxes', 'INTEGER DEFAULT 0'],
+  ['stim_charges', "TEXT DEFAULT '{\"health\":2,\"sanity\":2,\"red\":1,\"white\":1,\"black\":1,\"pale\":0}'"],
+  ['shield_red', 'INTEGER DEFAULT 0'], ['shield_white', 'INTEGER DEFAULT 0'],
+  ['shield_black', 'INTEGER DEFAULT 0'], ['shield_pale', 'INTEGER DEFAULT 0']
 ] as const) addColumnIfMissing('agents', column, definition);
 
 // Existing v2 agents used the old synthetic 'general' sector. Route them into Control.
@@ -576,6 +579,7 @@ db.query(`
 // ==========================================
 // 🛠️ HELPERS
 // ==========================================
+Progression.initializeProgressionSchema();
 // clamp, rand, pick, and json are now imported from src/utils/
 
 const FAVOR_LABELS = [
@@ -922,6 +926,26 @@ function getEffectiveStat(agent: any, stat: StatName) {
   return statValue(agent, stat) + (gift?.statBonus?.[stat] ?? 0);
 }
 
+const STAT_NAMES: Record<StatName, string> = {
+  fortitude: 'Fortitude', prudence: 'Prudence', temperance: 'Temperance', justice: 'Justice'
+};
+
+const STIM_DEFAULTS = { health: 0, sanity: 0, red: 0, white: 0, black: 0, pale: 0 } as const;
+
+function parseStimCharges(agent: any): Record<string, number> {
+  try {
+    const parsed = JSON.parse(agent?.stim_charges || '{}');
+    return { ...STIM_DEFAULTS, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
+  } catch {
+    return { ...STIM_DEFAULTS };
+  }
+}
+
+function spendStatPoint(agent: any, stat: StatName) {
+  const result = Progression.growStat(agent, stat, 5);
+  return { ok: result.gain > 0, ...result };
+}
+
 function calculateMaxHp(fortitude: number) {
   return 90 + fortitude * 12;
 }
@@ -960,11 +984,19 @@ function applyDamage(agent: any, amount: number, type: string) {
 
   const trait = agent.trait === 'cautious' ? 0.90 : (agent.trait === 'reckless' ? 1.10 : 1.0);
   const defense = Math.max(0.75, 1 - suit.defense * 0.04);
-  const actualDamage = Math.max(0, Math.floor(amount * multiplier * trait * defense));
+  const baseDamage = type === 'PALE' ? agent.max_hp * amount / 100 : amount;
+  let actualDamage = Math.max(0, Math.floor(baseDamage * multiplier * trait * defense));
+  const shieldKey = `shield_${String(type).toLowerCase()}`;
+  const shield = Math.max(0, Number(agent[shieldKey] ?? 0));
+  if (shield > 0) {
+    const absorbed = Math.min(shield, actualDamage);
+    agent[shieldKey] = shield - absorbed;
+    actualDamage -= absorbed;
+  }
 
   if (type === 'RED' || type === 'BLACK') agent.hp -= actualDamage;
   if (type === 'WHITE' || type === 'BLACK') agent.sp -= actualDamage;
-  if (type === 'PALE') agent.hp -= Math.floor(agent.max_hp * (amount / 100) * multiplier);
+  if (type === 'PALE') agent.hp -= actualDamage;
 
   if (agent.hp <= 0) {
     agent.hp = 0;
@@ -986,7 +1018,8 @@ function updateAgent(agent: any) {
     UPDATE agents SET hp=?, max_hp=?, sp=?, max_sp=?, status=?, experience=?, level=?,
     fortitude=?, prudence=?, temperance=?, justice=?, trait=?, recovery_days=?, assignments=?, kills=?, promotions=?,
     ego_gifts=?, equipped_gift=?, department=?, auto_response=?, travel_origin=?, travel_destination=?, travel_remaining=?,
-    panic_turns=?, panic_behavior=?, death_count=?
+    panic_turns=?, panic_behavior=?, death_count=?, stat_limit=?, pe_boxes=?, stim_charges=?
+    , shield_red=?, shield_white=?, shield_black=?, shield_pale=?, weapon=?, suit=?, progression=?
     WHERE discord_id=? AND guild_id=?
   `).run(
     agent.hp, agent.max_hp, agent.sp, agent.max_sp, agent.status, agent.experience, agent.level,
@@ -995,6 +1028,10 @@ function updateAgent(agent: any) {
     agent.ego_gifts ?? '[]', agent.equipped_gift ?? '', agent.department ?? 'control', agent.auto_response ?? '',
     agent.travel_origin ?? '', agent.travel_destination ?? '', Math.max(0, Number(agent.travel_remaining ?? 0)),
     Math.max(0, Number(agent.panic_turns ?? 0)), String(agent.panic_behavior ?? ''), Math.max(0, Number(agent.death_count ?? 0)),
+    Math.max(1, Number(agent.stat_limit ?? 100)), Math.max(0, Number(agent.pe_boxes ?? 0)), JSON.stringify(parseStimCharges(agent)),
+    Math.max(0, Number(agent.shield_red ?? 0)), Math.max(0, Number(agent.shield_white ?? 0)),
+    Math.max(0, Number(agent.shield_black ?? 0)), Math.max(0, Number(agent.shield_pale ?? 0)),
+    agent.weapon ?? 'riot_stick', agent.suit ?? 'basic_suit', agent.progression ?? '{}',
     agent.discord_id, agent.guild_id
   );
 }
@@ -1011,14 +1048,14 @@ function awardExperience(agent: any, amount: number) {
     agent.experience -= experienceToNext(agent.level);
     agent.level += 1;
     const stat = pick<StatName>(['fortitude', 'prudence', 'temperance', 'justice']);
-    agent[stat] += 1;
+    Progression.growStat(agent, stat, 1);
     agent.promotions += 1;
     const synced = syncAgentMaxStats(agent);
     agent.max_hp = synced.maxHp;
     agent.max_sp = synced.maxSp;
     agent.hp = clamp(agent.hp + 10, 0, agent.max_hp);
     agent.sp = clamp(agent.sp + 10, 0, agent.max_sp);
-    messages.push(`🌟 **level up!** ${agent.name} reached **level ${agent.level}** and gained +1 ${stat}!`);
+    messages.push(`🌟 **level up!** ${agent.name} reached **level ${agent.level}** and gained +1 ${stat} point!`);
   }
 
   return messages;
@@ -1052,6 +1089,7 @@ function ensureFacility(guildId: string, managerId: string) {
     facility.active_ordeal = '';
     facility.ordeal_timer = 0;
   }
+  Progression.migrateLegacyOrdeal(facility);
   return facility;
 }
 
@@ -1105,18 +1143,9 @@ function maybeUnlockCodexEntry(guildId: string, abno: any, level: number) {
 }
 
 function maybeTriggerOrdeal(guildId: string, facility: any) {
-  if (!facility || facility.ordeal_active) return false;
-  for (const stage of ORDEAL_STAGES) {
-    if (Number(facility.energy) >= stage.threshold) {
-      const color = stage.color;
-      const expiresAt = Date.now() + 60000;
-      db.query(`UPDATE facility SET ordeal_active=1, active_ordeal=?, ordeal_timer=? WHERE guild_id=?`).run(color, expiresAt, guildId);
-      db.query(`INSERT INTO ordeal_events (guild_id, color, threshold, active, expires_at) VALUES (?, ?, ?, 1, ?)`).run(guildId, color, stage.threshold, expiresAt);
-      logEvent(guildId, facility.day_count, facility.phase, 'ordeal', `${stage.label} triggered: ${color.toUpperCase()} invaders are active in the facility.`);
-      return true;
-    }
-  }
-  return false;
+  if (!facility) return false;
+  const current = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
+  return current ? Progression.startOrdeal(current) : false;
 }
 
 // getPanicBehaviorKey, resolvePanicBehavior, applyPanicState are now imported from src/game/logic.ts
@@ -1248,7 +1277,7 @@ function seedAbnormalities(guildId: string) {
   for (const template of ABNORMALITY_TEMPLATES) {
     const giftId = (template as any).gift?.id ?? '';
     const activeProcess = pick<WorkType>(['instinct', 'insight', 'attachment', 'repression']);
-    const meltdownTimer = 30 + rand(5, 15);
+    const meltdownTimer = 0;
     db.query(`
       INSERT INTO abnormalities (
         guild_id, name, risk, hp, max_hp, qliphoth, max_qliphoth, damage_type, damage_amt,
@@ -1328,7 +1357,7 @@ function runAbnormalityTestAction(guildId: string, action: AbnormalityTestAction
       guildId, template.name, template.risk, template.hp, template.hp, template.qliphoth, template.qliphoth,
       template.damage_type, template.damage_amt, template.instinct, template.insight, template.attachment,
       template.repression, template.escape_chance, template.behaviour, template.description, giftId,
-      'instinct', 45, 'stable', (template as any).script_id ?? '', (template as any).can_breach ?? 1, (template as any).is_tool ?? 0
+      'instinct', 0, 'stable', (template as any).script_id ?? '', (template as any).can_breach ?? 1, (template as any).is_tool ?? 0
     );
     const abnormality = db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(Number(result.lastInsertRowid), guildId) as any;
     return { ok: true, abnormality, message: `➕ added **${template.name}** as test abnormality **#${abnormality.id}**.` };
@@ -1352,6 +1381,30 @@ function runAbnormalityTestAction(guildId: string, action: AbnormalityTestAction
   return { ok: true, abnormality: findAbnormalityForTest(guildId, String(abnormality.id)), message: `🔒 ${verb} **${abnormality.name} #${abnormality.id}**.` };
 }
 
+function recruitAbnormality(guildId: string, managerId: string, choice: number | null, department = 'control') {
+  return db.transaction(() => {
+    const f = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
+    if (!f || f.manager_id !== managerId) throw new Error('manager only');
+    if (!evaluateDepartmentUnlocks(f).includes(department)) throw new Error('that department is locked');
+    const p = Progression.facilityProgress(f);
+    if (p.recruitmentDay === f.day_count) throw new Error('one abnormality may be recruited per day');
+    if (!p.offers.length) {
+      const available = [...new Set([...ABNORMALITY_TEMPLATES.map(t => t.name), ...Object.keys(ABNORMALITY_SCRIPTS)])];
+      for (let i = available.length - 1; i > 0; i--) { const j = rand(0, i); [available[i], available[j]] = [available[j]!, available[i]!]; }
+      p.offers = available.slice(0, 3);
+      Progression.saveFacilityProgress(f, p);
+    }
+    if (choice == null) return `📦 choose one abnormality with /recruit choice:1 (or 2/3)\n${p.offers.map((name: string, i: number) => `${i + 1}. ${name}`).join('\n')}\nscript-only entries use generic testing stats, not canonical gear data.`;
+    if (!Number.isInteger(choice) || choice < 1 || choice > p.offers.length) throw new Error('choice must be 1, 2 or 3');
+    const result = runAbnormalityTestAction(guildId, 'add', p.offers[choice - 1]);
+    if (!result.ok || !result.abnormality) throw new Error('that recruitment entry is unavailable');
+    db.query('UPDATE abnormalities SET sector=? WHERE guild_id=? AND id=?').run(department, guildId, result.abnormality.id);
+    p.offers = []; p.recruitmentDay = f.day_count;
+    Progression.saveFacilityProgress(f, p);
+    return `${result.message} assigned to ${department}.`;
+  })();
+}
+
 // getCurrentWorkAffinity and getMeltdownState are now imported from src/game/logic.ts
 
 const DEPARTMENT_META: Record<string, { label: string; unlockSource: string; bonus: string }> = {
@@ -1359,7 +1412,11 @@ const DEPARTMENT_META: Record<string, { label: string; unlockSource: string; bon
   information: { label: 'Information', unlockSource: 'complete the Control quest', bonus: 'accelerates observation and recordkeeping' },
   security: { label: 'Security', unlockSource: 'complete the Information quest', bonus: '+10% HP/SP recovery' },
   training: { label: 'Training', unlockSource: 'complete the Security quest', bonus: '+1 training yield per day' },
-  command: { label: 'Central Command', unlockSource: 'complete the Training quest', bonus: 'global command routing' }
+  command: { label: 'Central Command', unlockSource: 'complete the Training quest', bonus: 'shield research' },
+  disciplinary: { label: 'Disciplinary', unlockSource: 'complete the Command quest', bonus: 'suppression operations' },
+  welfare: { label: 'Welfare', unlockSource: 'complete the Disciplinary quest', bonus: 'health and sanity stim research' },
+  extraction: { label: 'Extraction', unlockSource: 'complete the Welfare quest', bonus: 'E.G.O. extraction operations' },
+  record: { label: 'Record', unlockSource: 'complete the Extraction quest', bonus: 'institutional records' }
 };
 
 const DEPARTMENT_QUESTS: Record<string, { description: string; goal: string; target: number; unlocks?: string }> = {
@@ -1367,7 +1424,11 @@ const DEPARTMENT_QUESTS: Record<string, { description: string; goal: string; tar
   information: { description: 'Turn personal observation into institutional knowledge', goal: 'fully document 3 unique abnormalities', target: 3, unlocks: 'security' },
   security: { description: 'Prove the facility can recover from containment failure', goal: 'suppress 2 breaches', target: 2, unlocks: 'training' },
   training: { description: 'Build a staff capable of surviving deeper work', goal: 'complete 3 stat training sessions', target: 3, unlocks: 'command' },
-  command: { description: 'Coordinate full-facility operations', goal: 'finish 6 quota-complete days', target: 6 }
+  command: { description: 'Coordinate full-facility operations', goal: 'finish 6 quota-complete days', target: 6, unlocks: 'disciplinary' },
+  disciplinary: { description: 'Protect the facility', goal: 'suppress 5 breaches', target: 5, unlocks: 'welfare' },
+  welfare: { description: 'Support recovery operations', goal: 'finish 5 good works in Welfare', target: 5, unlocks: 'extraction' },
+  extraction: { description: 'Extract E.G.O.', goal: 'purchase 3 new E.G.O. items', target: 3, unlocks: 'record' },
+  record: { description: 'Preserve facility history', goal: 'finish 3 quota-complete days', target: 3 }
 };
 
 function getUnlockedDepartments(facility: any): string[] {
@@ -1404,7 +1465,18 @@ export function syncDepartmentUnlocks(guildId: string, facility: any) {
     if (unlock) unlocked.add(unlock);
   }
 
-  const ordered = ['control', 'information', 'security', 'training', 'command'].filter(dept => unlocked.has(dept));
+  // Finite catalogues must not soft-lock players who bought gear before the
+  // department opened. Count existing unique ownership retroactively.
+  if (unlocked.has('extraction')) {
+    const agents = db.query('SELECT * FROM agents WHERE guild_id=?').all(guildId) as any[];
+    const extracted = agents.reduce((total, agent) => total + Progression.agentProgress(agent).inventory
+      .filter((id: string) => Progression.EGO_CATALOG.some(item => item.id === id)).length, 0);
+    const progress = Math.min(3, extracted);
+    db.query('UPDATE department_quests SET progress=MAX(progress, ?), complete=MAX(complete, ?) WHERE guild_id=? AND department=?').run(progress, progress >= 3 ? 1 : 0, guildId, 'extraction');
+    if (progress >= 3) unlocked.add('record');
+  }
+
+  const ordered = Object.keys(Progression.DEPARTMENTS).filter(dept => unlocked.has(dept));
   db.query(`UPDATE facility SET department_unlocks=? WHERE guild_id=?`).run(json(ordered), guildId);
   if (facility) facility.department_unlocks = json(ordered);
   return ordered;
@@ -1471,6 +1543,7 @@ const TRAVEL_PHASES: Record<string, number> = {
   security: 1,
   training: 1,
   command: 2,
+  disciplinary: 2, welfare: 2, extraction: 3, record: 3,
   general: 1
 };
 
@@ -1567,13 +1640,19 @@ function getDepartmentBonus(facility: any, type: 'security' | 'information' | 'c
 
 function triggerMeltdownAlarm(guildId: string, facility: any) {
   if (!facility || facility.meltdown_alarm) return false;
-  const abnormalities = db.query(`SELECT * FROM abnormalities WHERE guild_id = ? AND is_breaching = 0 ORDER BY id`).all(guildId) as any[];
+  const current = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
+  if (!current || current.meltdown_alarm) return false;
+  const progress = Progression.facilityProgress(current);
+  progress.meltdown += 1;
+  Progression.saveFacilityProgress(current, progress);
+  const abnormalities = (db.query(`SELECT * FROM abnormalities WHERE guild_id = ? AND is_breaching = 0 ORDER BY id`).all(guildId) as any[])
+    .filter(abno => !progress.cores.includes(abno.sector || 'control'));
   if (!abnormalities.length) return false;
 
   const targetCount = 1 + Math.min(2, Math.floor(Math.random() * 3));
   const targets = [...abnormalities].sort(() => Math.random() - 0.5).slice(0, targetCount);
   for (const abno of targets) {
-    abno.meltdown_timer = 30 + rand(10, 40);
+    abno.meltdown_timer = 2;
     abno.meltdown_state = 'alarm';
     db.query(`UPDATE abnormalities SET meltdown_timer=?, meltdown_state=? WHERE id=?`).run(abno.meltdown_timer, abno.meltdown_state, abno.id);
   }
@@ -1597,25 +1676,30 @@ function resolveMeltdownTimers(guildId: string, facility: any): any[] {
   for (const id of targets) {
     const abno = db.query(`SELECT * FROM abnormalities WHERE id = ? AND guild_id = ?`).get(id, guildId) as any;
     if (!abno) continue;
+    if (Progression.facilityProgress(facility).cores.includes(abno.sector || 'control')) {
+      db.query("UPDATE abnormalities SET meltdown_timer=0, meltdown_state='stable' WHERE id=? AND guild_id=?").run(abno.id, guildId);
+      continue;
+    }
     if (!abno.is_breaching) {
       const previousQliphoth = Number(abno.qliphoth ?? 0);
       const nextTimer = Number(abno.meltdown_timer ?? 0) - 1;
       abno.meltdown_timer = nextTimer;
       if (nextTimer <= 0) {
         abno.qliphoth = 0;
-        abno.is_breaching = 1;
-        abno.breaches += 1;
+        abno.is_breaching = Number(abno.can_breach ?? 1) ? 1 : 0;
+        abno.breaches += abno.is_breaching;
         abno.rage = Math.min(10, abno.rage + 2);
-        abno.meltdown_state = 'breach';
-        logEvent(guildId, facility.day_count, facility.phase, 'meltdown', `${abno.name} missed the timer and breached instantly.`);
-        breached.push(abno);
+        abno.meltdown_timer = 0;
+        abno.meltdown_state = abno.is_breaching ? 'breach' : 'meltdown';
+        logEvent(guildId, facility.day_count, facility.phase, 'meltdown', `${abno.name} missed the timer; Qliphoth reached zero.`);
+        if (abno.is_breaching) breached.push(abno);
       }
       db.query(`UPDATE abnormalities SET qliphoth=?, is_breaching=?, breaches=?, meltdown_timer=?, meltdown_state=? WHERE id=?`).run(
         abno.qliphoth, abno.is_breaching, abno.breaches, abno.meltdown_timer, abno.meltdown_state, abno.id
       );
       if (nextTimer <= 0) {
         publishQliphothChange(guildId, Number(abno.id), previousQliphoth, 0);
-        publishFacilityEvent(guildId, { type: 'abnormality_breached', abnormalityId: Number(abno.id) });
+        if (abno.is_breaching) publishFacilityEvent(guildId, { type: 'abnormality_breached', abnormalityId: Number(abno.id) });
       }
       if (abno.meltdown_timer > 0) activeTargets.push(abno.id);
     }
@@ -1633,10 +1717,7 @@ function resolveMeltdownTimers(guildId: string, facility: any): any[] {
 function formatMeltdownTimer(abno: any) {
   const state = getMeltdownState(abno);
   if (state.timer <= 0 && Number(abno.qliphoth ?? 0) > 0) return 'stable';
-  const totalSeconds = Math.max(1, state.timer || 15);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  return `${Math.max(0, state.timer)} work action(s)`;
 }
 
 // calculateWorkChance, workQuality, and getPEBoxTotal are now imported from src/game/logic.ts
@@ -1770,6 +1851,7 @@ function levelPreviewText(agent: any, abno: any, workType: WorkType, facility: a
 }
 
 async function executeWork(interaction: any, agent: any, abno: any, workType: WorkType, facility: any, level: number = 1) {
+  if (agent.status === 'working') return interaction.reply({ content: '⏳ finish your current work assignment first.', ephemeral: true });
   if (!abno) {
     return interaction.reply({ content: '❌ that abnormality no longer exists!', ephemeral: true });
   }
@@ -1824,6 +1906,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     }
   }
 
+  if (Progression.defuseWorkMeltdown(interaction.guildId!, abno)) eventMessages.push('🟢 work defused the targeted Qliphoth meltdown.');
   const chance = calculateWorkChance(agent, abno, workType, facility, level);
   const result = workQuality(chance, level, behaviour);
   let totalDamage = 0;
@@ -1836,6 +1919,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
 
   agent.status = 'working';
   agent.assignments += 1;
+  updateAgent(agent);
 
   for (let i = 0; i < 5; i++) {
     const tickChance = clamp(chance + (result.tier === 'good' ? 0.08 : result.tier === 'critical' ? -0.10 : 0), 0.05, 0.98);
@@ -1853,9 +1937,8 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
         tickResults.push(`🌪️ ${spike} instability dmg`);
       }
     } else {
-      const damage = applyDamage(agent, effectiveDamageAmt * (result.tier === 'critical' ? 1.35 : 1), abno.damage_type);
-      totalDamage += damage;
-      tickResults.push(`💥 ${damage} dmg`);
+      // Negative-box damage is applied once, during the visible resolution.
+      tickResults.push('💥 NE');
     }
   }
 
@@ -1892,15 +1975,16 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     abno.rage = Math.max(0, abno.rage - 1);
   }
 
+  abno.qliphoth = Math.max(0, Number(abno.qliphoth ?? 0));
   const resolvedQliphoth = Number(abno.qliphoth ?? 0);
   publishQliphothChange(interaction.guildId!, Number(abno.id), previousQliphoth, resolvedQliphoth, eventMessages);
 
   abno.current_work_process = workType;
-  abno.meltdown_timer = Math.max(15, 45 - (abno.max_qliphoth - abno.qliphoth) * 8 + abno.rage * 3);
+  abno.meltdown_timer = 0;
   abno.meltdown_state = getMeltdownState(abno).label;
 
-  if (abno.qliphoth <= 0) {
-    abno.qliphoth = abno.max_qliphoth;
+  if (abno.qliphoth <= 0 && Number(abno.can_breach ?? 1)) {
+    abno.qliphoth = 0;
     abno.is_breaching = 1;
     abno.breaches += 1;
     abno.rage = Math.min(10, abno.rage + 2);
@@ -1961,9 +2045,11 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
 
   recordDepartmentProgress(interaction.guildId!, 'control', energyGain);
 
-  if (agent.assignments > 0 && agent.assignments % 5 === 0) {
-    triggerMeltdownAlarm(interaction.guildId!, facility);
-  }
+  const workFacility = db.query('SELECT * FROM facility WHERE guild_id=?').get(interaction.guildId!) as any;
+  const workProgress = Progression.facilityProgress(workFacility);
+  workProgress.workCount += 1;
+  Progression.saveFacilityProgress(workFacility, workProgress);
+  triggerMeltdownAlarm(interaction.guildId!, workFacility);
 
   const timerBreaches = resolveMeltdownTimers(
     interaction.guildId!,
@@ -2044,7 +2130,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   };
 
   const workResult = await liveProgress();
-  totalDamage = workResult.liveDamageTotal;
+  totalDamage += workResult.liveDamageTotal;
   observedAgentStatus = publishAgentStatusTransition(interaction.guildId!, observedAgentStatus, agent, eventMessages);
 
   const knowledgeResult = updateAgentKnowledge(
@@ -2055,6 +2141,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
     peBoxes
   );
   const knowledge = knowledgeResult.knowledge;
+  agent.pe_boxes = Math.max(0, Number(agent.pe_boxes ?? 0)) + Math.max(0, Number(peBoxes));
   const uniqueObserved = totalUniquePE(knowledge);
   const codexLevel = uniqueObserved >= 8 ? 4 : uniqueObserved >= 6 ? 3 : uniqueObserved >= 4 ? 2 : uniqueObserved >= 2 ? 1 : 0;
   if (codexLevel > 0) maybeUnlockCodexEntry(interaction.guildId!, abno, codexLevel);
@@ -2087,6 +2174,13 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   const riskWeight = RISK_VALUES[abno.risk] ?? 1;
   const expGain = Math.max(4, energyGain + riskWeight * 3 + (result.tier === 'good' ? 5 : 0));
   const levelMessages = awardExperience(agent, expGain);
+  const statGain = Progression.awardWorkProgress(agent, abno, workType, positiveGoal, phaseFacility);
+  if (statGain) levelMessages.push(`📊 +${statGain} ${getWorkType(workType).stat} point from work.`);
+  if (agent.status !== 'dead' && result.tier === 'good') {
+    const fresh = db.query('SELECT * FROM facility WHERE guild_id=?').get(interaction.guildId!) as any;
+    if (Progression.advanceCore(fresh, agent.department, true)) levelMessages.push(`✨ ${agent.department} core suppressed: this department is now immune to Qliphoth meltdowns.`);
+    if (agent.department === 'welfare') recordDepartmentProgress(interaction.guildId!, 'welfare', 1);
+  }
 
   const synced = syncAgentMaxStats(agent);
   agent.max_hp = synced.maxHp;
@@ -2240,7 +2334,7 @@ function resetDailyOperationalState(guildId: string) {
     db.query(`
       UPDATE abnormalities SET qliphoth=max_qliphoth, rage=MAX(0, rage-1), current_work_process=?,
       meltdown_timer=?, meltdown_state='stable' WHERE id=?
-    `).run(nextProcess, 30 + rand(10, 35), abno.id);
+    `).run(nextProcess, 0, abno.id);
   }
 
   db.query(`
@@ -2329,6 +2423,7 @@ function restoreState(guildId: string, state: any) {
   if (!state?.facility) throw new Error('save file is missing facility data');
 
   const f = state.facility;
+  db.query('UPDATE facility SET progression=? WHERE guild_id=?').run(f.progression ?? '{}', guildId);
   db.query(`
     UPDATE facility SET energy=?, quota=?, dictator_mode=?, manager_id=?, is_started=?, is_paused=?, day_count=?, phase=?,
     category_id=?, control_channel_id=?, containment_channel_id=?, status_channel_id=?, radio_channel_id=?,
@@ -2350,16 +2445,23 @@ function restoreState(guildId: string, state: any) {
       INSERT INTO agents (
         discord_id, guild_id, name, hp, max_hp, sp, max_sp, weapon, suit, status, level, fortitude, prudence,
         temperance, justice, experience, trait, recovery_days, assignments, kills, promotions, ego_gifts, equipped_gift,
-        department, auto_response, travel_origin, travel_destination, travel_remaining, panic_turns, panic_behavior, death_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        department, auto_response, travel_origin, travel_destination, travel_remaining, panic_turns, panic_behavior, death_count,
+        stat_limit, pe_boxes, stim_charges, shield_red, shield_white, shield_black, shield_pale
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       agent.discord_id, guildId, agent.name, agent.hp, agent.max_hp, agent.sp, agent.max_sp, agent.weapon, agent.suit,
       agent.status, agent.level, agent.fortitude, agent.prudence, agent.temperance, agent.justice, agent.experience,
       agent.trait, agent.recovery_days, agent.assignments, agent.kills, agent.promotions, agent.ego_gifts ?? '[]',
       agent.equipped_gift ?? '', agent.department ?? 'control', agent.auto_response ?? '', agent.travel_origin ?? '',
       agent.travel_destination ?? '', Math.max(0, Number(agent.travel_remaining ?? 0)), Math.max(0, Number(agent.panic_turns ?? 0)),
-      agent.panic_behavior ?? '', Math.max(0, Number(agent.death_count ?? 0))
+      agent.panic_behavior ?? '', Math.max(0, Number(agent.death_count ?? 0)), Math.max(1, Number(agent.stat_limit ?? 100)),
+      Math.max(0, Number(agent.pe_boxes ?? 0)), JSON.stringify(parseStimCharges(agent)), Math.max(0, Number(agent.shield_red ?? 0)),
+      Math.max(0, Number(agent.shield_white ?? 0)), Math.max(0, Number(agent.shield_black ?? 0)), Math.max(0, Number(agent.shield_pale ?? 0))
     );
+    db.query('UPDATE agents SET progression=? WHERE guild_id=? AND discord_id=?').run(agent.progression ?? '{}', guildId, agent.discord_id);
   }
 
   db.query(`DELETE FROM abnormalities WHERE guild_id=?`).run(guildId);
@@ -2447,6 +2549,10 @@ function restoreState(guildId: string, state: any) {
 
 async function endDay(interaction: any, facility: any) {
   const guildId = interaction.guildId!;
+  if (db.query("SELECT 1 FROM agents WHERE guild_id=? AND status='working' LIMIT 1").get(guildId)) {
+    return interaction.reply({ content: '⏳ let the current work assignment finish before ending the day.', ephemeral: true });
+  }
+  if (facility.ordeal_active) return interaction.reply({ content: '⚠️ suppress the active ordeal with `/ordeal action:fight` before ending the day.', ephemeral: true });
   const activeBreaches = db.query(`SELECT * FROM abnormalities WHERE guild_id=? AND is_breaching=1`).all(guildId) as any[];
   if (activeBreaches.length) {
     return interaction.reply({
@@ -2481,10 +2587,12 @@ async function endDay(interaction: any, facility: any) {
 
   resolveDailyRecovery(guildId);
   resetDailyOperationalState(guildId);
+  Progression.resetProgressionDay(db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId), quotaMet);
 
   const freshFacility = db.query(`SELECT * FROM facility WHERE guild_id = ?`).get(guildId) as any;
   if (quotaMet) {
     recordDepartmentProgress(guildId, 'command', 1);
+    recordDepartmentProgress(guildId, 'record', 1);
   }
   logEvent(guildId, completedDay, facility.phase, 'day_end',
     quotaMet ? `Day ${completedDay} completed successfully with ${facility.energy}/${oldQuota} energy.` :
@@ -2535,6 +2643,8 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // Help is read-only and available even before joining or starting a facility.
+    if (interaction.isChatInputCommand() && interaction.commandName === 'help') return handleHelpCommand(interaction);
     if (!interaction.guildId || !interaction.guild) return;
 
     const facility = ensureFacility(interaction.guildId, interaction.user.id);
@@ -2542,6 +2652,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const customId = String((interaction as any).customId ?? '');
     const workPrompt = parseWorkPromptId(customId);
     const workPromptRejection = getWorkPromptRejection(customId, interaction.user.id);
+    const activeCore = Progression.facilityProgress(facility).core;
+    if (activeCore?.department === 'information' && (
+      (interaction.isChatInputCommand() && ['info', 'stats', 'history', 'work-history'].includes(interaction.commandName)) ||
+      (interaction.isButton() && customId.startsWith('info_'))
+    )) return interaction.reply({ content: '📵 information is obscured until the Yesod core challenge is complete.', ephemeral: true });
 
     if ((interaction.isButton() || interaction.isStringSelectMenu()) && workPromptRejection) {
       return rejectUnavailableWorkPrompt(interaction, workPromptRejection.ownerId);
@@ -2549,6 +2664,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
       const { commandName, user, guildId, guild } = interaction;
+      if (PROGRESSION_COMMANDS.includes(commandName)) {
+        return handleProgressionCommand(interaction, { updateAgent, syncAgentMaxStats, applyDamage, publishAgentStatusTransition, recordDepartmentProgress, recruitAbnormality });
+      }
 
       if (commandName === 'join') {
         adoptLegacyAgent(user.id, guildId);
@@ -2595,6 +2713,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 );
 
         logEvent(guildId, facility.day_count, facility.phase, 'agent_joined', `${user.username} joined as a new agent.`);
+        db.query('UPDATE agents SET stim_charges=? WHERE guild_id=? AND discord_id=?').run(JSON.stringify(Progression.stimLoadout(facility)), guildId, user.id);
         await interaction.reply(
           `welcome to the corporation, agent **${user.username}**!! ✨\n` +
           `you've been assigned the **${TRAITS[trait]?.name ?? trait}** trait.\n` +
@@ -2646,6 +2765,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.reply({ embeds: [agentStatusEmbed(agent, facility)] });
       }
 
+
       else if (commandName === 'info') {
         const targetId = interaction.options.getString('abnormality', true);
         const selected = (db.query(`SELECT * FROM abnormalities WHERE guild_id=? ORDER BY id`).all(guildId) as any[])
@@ -2673,6 +2793,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .join('\n\n');
         await interaction.reply({ content: `💠 **${agent.name}'S E.G.O. GIFTS**\n\n${lines}`, ephemeral: true });
       }
+
 
       else if (commandName === 'equip-gift') {
         const agent = findAgent(user.id, guildId);
@@ -2860,28 +2981,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.reply(`🏗️ **${type.toUpperCase()} UPGRADED!** level **${current + 1}** reached. 💰 -${cost} LOB points`);
       }
 
-      else if (commandName === 'train') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
-        const target = interaction.options.getUser('agent', true) as User;
-        const stat = interaction.options.getString('stat', true) as StatName;
-        const agent = findAgent(target.id, guildId);
-        if (!agent) return interaction.reply({ content: `${target.username} is not an agent!`, ephemeral: true });
-
-        const cost = 50 + agent[stat] * 20;
-        if (facility.research < cost) return interaction.reply({ content: `🧪 not enough research. need **${cost}**, have **${facility.research}**.`, ephemeral: true });
-
-        agent[stat] += 1;
-        const synced = syncAgentMaxStats(agent);
-        agent.max_hp = synced.maxHp;
-        agent.max_sp = synced.maxSp;
-        agent.hp = Math.min(agent.max_hp, agent.hp + 15);
-        agent.sp = Math.min(agent.max_sp, agent.sp + 15);
-        updateAgent(agent);
-        db.query(`UPDATE facility SET research=research-? WHERE guild_id=?`).run(cost, guildId);
-        recordDepartmentProgress(guildId, 'training', 1);
-        logEvent(guildId, facility.day_count, facility.phase, 'training', `${agent.name} trained ${stat}.`);
-        await interaction.reply(`🧪 **TRAINING COMPLETE!** ${agent.name} gained **+1 ${stat}**. research -${cost}.`);
-      }
 
           else if (commandName === 'history') {
         const events = db.query(`SELECT * FROM facility_events WHERE guild_id=? ORDER BY id DESC LIMIT 12`).all(guildId) as any[];
@@ -2977,14 +3076,13 @@ ${body}`.slice(0, 1900), ephemeral: true });
           const marker = row.current ? '📍' : row.unlocked ? '✅' : '🔒';
           const quest = row.target > 0 ? `${row.complete ? '✅' : '◻️'} quest: ${row.questGoal} — **${row.progress}/${row.target}**` : '';
           const gate = row.unlocked ? 'route available' : row.unlockSource;
-          return `${marker} **${row.label}** · ${row.route}
+          const meta = Progression.DEPARTMENTS[row.department as keyof typeof Progression.DEPARTMENTS];
+          return `${marker} **${row.label}** · ${meta.layer} / ${meta.sephirah}
 ${row.bonus}
 ${gate}${quest ? `
 ${quest}` : ''}`;
         }).join('\n\n');
-        await interaction.reply({ content: `🏢 **DEPARTMENT ROUTING**
-
-${lines}`.slice(0, 1900), ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🏢 department routing').setDescription(lines.slice(0, 4096))], ephemeral: true });
       }
 
       else if (commandName === 'travel') {
@@ -3215,7 +3313,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         }
 
         const incoming = applyDamage(agent, finalAbnoDamage, abno.damage_type);
-        abno.hp -= finalAgentDamage;
+        abno.hp -= weapon.type === 'PALE' ? Math.floor(abno.max_hp * finalAgentDamage / 100) : finalAgentDamage;
         agent.assignments += 1;
 
         const bInfo = BEHAVIOUR_INFO[behaviour];
@@ -3262,6 +3360,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
           tx();
 
           recordDepartmentProgress(guildId, 'security', 1);
+          recordDepartmentProgress(guildId, 'disciplinary', 1);
           logEvent(guildId, facility.day_count, facility.phase, 'suppression', `${agent.name} suppressed ${abno.name}.`);
           publishQliphothChange(guildId, Number(abno.id), previousQliphoth, Number(abno.qliphoth));
           publishFacilityEvent(guildId, { type: 'abnormality_suppressed', abnormalityId: Number(abno.id) });
@@ -3342,7 +3441,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
         }
 
         const incoming = applyDamage(agent, finalAbnoDamage, abno.damage_type);
-        abno.hp -= finalAgentDamage;
+        abno.hp -= weapon.type === 'PALE' ? Math.floor(abno.max_hp * finalAgentDamage / 100) : finalAgentDamage;
         agent.assignments += 1;
 
         const bInfo = BEHAVIOUR_INFO[behaviour];
@@ -3389,6 +3488,7 @@ ${lines}`.slice(0, 1900), ephemeral: true });
           tx();
 
           recordDepartmentProgress(guildId, 'security', 1);
+          recordDepartmentProgress(guildId, 'disciplinary', 1);
           logEvent(guildId, facility.day_count, facility.phase, 'suppression', `${agent.name} suppressed ${abno.name}.`);
           publishQliphothChange(guildId, Number(abno.id), previousQliphoth, Number(abno.qliphoth));
           publishFacilityEvent(guildId, { type: 'abnormality_suppressed', abnormalityId: Number(abno.id) });
@@ -3471,6 +3571,10 @@ export const __test = {
   panicSupportChance,
   resolvePanicPhase,
   seedAbnormalities,
+  executeWork,
+  endDay,
+  recruitAbnormality,
+  publishAgentStatusTransition,
   findAbnormalityForTest,
   findAbnormalityTemplate,
   runAbnormalityTestAction,
