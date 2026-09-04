@@ -1,4 +1,5 @@
 import { db } from '../db/database';
+import { MessageFlags } from 'discord.js';
 import * as P from '../game/progression';
 import { EGO_EQUIPMENT_SEED, EGO_WEAPONS } from '../game/logic';
 import type { StatName } from '../types/game';
@@ -11,7 +12,7 @@ export async function handleProgressionCommand(interaction: any, runtime: any) {
   const userId = interaction.user.id;
   const command = interaction.commandName;
   const option = (key: string) => interaction.options.getString(key);
-  const reply = (content: string) => interaction.reply({ content, ephemeral: true });
+  const reply = (content: string) => interaction.reply({ content, flags: MessageFlags.Ephemeral });
   try {
     const facility = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
     if (!facility) throw new Error('facility not found');
@@ -22,13 +23,13 @@ export async function handleProgressionCommand(interaction: any, runtime: any) {
       P.researchProject(guildId, userId, key);
       const fresh = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId);
       db.query("UPDATE agents SET stim_charges=? WHERE guild_id=? AND status<>'dead'").run(JSON.stringify(P.stimLoadout(fresh)), guildId);
-      return reply(`🔬 **${key}** researched. unlocked stims have been issued; refills arrive at the next day.`);
+      return reply(`🔬 **${key}** researched. unlocked supplies are ready. they refill each new day.`);
     }
     if (command === 'core') {
       const dept = option('department');
       if (dept) P.startCore(guildId, userId, dept);
       const p = P.facilityProgress(db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId));
-      return reply(`🧠 core challenge: ${p.core ? `${p.core.department} — ${p.core.progress}/${p.core.target} good works in that department` : 'none'}\ncleared: ${p.cores.join(', ') || 'none'}\ncleared departments are immune to Qliphoth meltdowns. information challenges temporarily hide information commands.`);
+      return reply(`🧠 core challenge: ${p.core ? `${p.core.department} — ${p.core.progress}/${p.core.target} good works in that department` : 'none'}\ncleared: ${p.cores.join(', ') || 'none'}\ncleared departments no longer get Qliphoth meltdowns. Information’s challenge hides observation and history commands until it’s cleared.`);
     }
     if (command === 'recruit') {
       return reply(runtime.recruitAbnormality(guildId, userId, interaction.options.getInteger('choice'), option('department') || 'control'));
@@ -47,20 +48,20 @@ export async function handleProgressionCommand(interaction: any, runtime: any) {
       Object.assign(result.agent, { max_hp: synced.maxHp, max_sp: synced.maxSp, hp: synced.hp, sp: synced.sp });
       runtime.updateAgent(result.agent);
       runtime.recordDepartmentProgress(guildId, 'training', 1);
-      return reply(`📊 ${stat} +${result.gain}: ${result.current}/${result.limit}. spent 5 of that agent's personal LOB.`);
+      return reply(`📊 ${stat} +${result.gain}: ${result.current}/${result.limit}. cost: 5 personal LOB.`);
     }
     if (command === 'stim') {
       const type = option('type');
       const remaining = P.useStim(agent, facility, type);
       runtime.updateAgent(agent);
-      return reply(`💉 ${type} stim used. ${remaining} charge(s) left; HP ${agent.hp}/${agent.max_hp}, SP ${agent.sp}/${agent.max_sp}.`);
+      return reply(`💉 ${type} stim used. ${remaining} left. HP ${agent.hp}/${agent.max_hp}, SP ${agent.sp}/${agent.max_sp}.`);
     }
     if (command === 'ego') {
       const input = option('item')?.trim().toLowerCase();
-      if (!input) return reply(`💠 E.G.O. catalogue\n${P.EGO_CATALOG.map(item => `**${item.id}** — ${item.source}: ${item.lob} personal LOB + ${item.pe} source PE`).join('\n')}\nfully observe that source first (8/8); buying equips the item. choosing an owned item re-equips it for free. other sources have no extractable gear data.`);
+      if (!input) return reply(`💠 E.G.O. catalogue\n${P.EGO_CATALOG.map(item => `**${item.id}** — ${item.source}: ${item.lob} personal LOB + ${item.pe} source PE`).join('\n')}\nyou need your own 8/8 observations and PE from that abnormality. buying also equips it; re-equipping owned gear is free. only the gear listed here is available.`);
       const item = P.EGO_CATALOG.find(item => item.id === input)
         ?? P.EGO_CATALOG.find(item => EGO_EQUIPMENT_SEED.find(seed => seed.id === item.id)?.name.toLowerCase() === input);
-      if (!item) throw new Error('unknown item; use /ego to see exact IDs');
+      if (!item) throw new Error('can’t find that item. use /ego to check the list');
       const alreadyOwned = P.agentProgress(agent).inventory.includes(item.id);
       P.purchaseEgo(guildId, userId, item.id);
       if (!alreadyOwned) runtime.recordDepartmentProgress(guildId, 'extraction', 1);
@@ -68,10 +69,10 @@ export async function handleProgressionCommand(interaction: any, runtime: any) {
     }
     if (command === 'ordeal') {
       const ordeal = P.facilityProgress(facility).ordeal;
-      if (!ordeal) return reply('no active ordeal. stages occur at meltdown levels 1, 2, 3 and 4.');
+      if (!ordeal) return reply('no ordeal right now. dawn, noon, dusk and midnight start at meltdown levels 1–4.');
       if (option('action') !== 'fight') return reply(`⚠️ ${ordeal.stage} / ${ordeal.color}: ${ordeal.hp}/${ordeal.maxHp} HP. use /ordeal action:fight.`);
-      if (!facility.is_started || facility.is_paused) throw new Error('facility operations must be running');
-      if (['dead', 'panicked', 'traumatized', 'working'].includes(agent.status) || agent.travel_remaining > 0) throw new Error('you cannot fight in your current state');
+      if (!facility.is_started || facility.is_paused) throw new Error('the shift needs to be running before you can fight');
+      if (['dead', 'panicked', 'traumatized', 'working'].includes(agent.status) || agent.travel_remaining > 0) throw new Error('you can’t fight while dead, panicked, traumatized, working or travelling');
       const key = `${guildId}:${userId}`;
       if ((fightCooldown.get(key) || 0) > Date.now()) throw new Error('wait a moment before attacking again');
       fightCooldown.set(key, Date.now() + 1200);
@@ -84,9 +85,9 @@ export async function handleProgressionCommand(interaction: any, runtime: any) {
       const messages: string[] = [];
       runtime.publishAgentStatusTransition(guildId, previous, agent, messages);
       const hp = P.damageOrdeal(facility, damage);
-      return reply(`⚔️ dealt ${damage}; suffered ${incoming}. ${hp ? `ordeal HP: ${hp}` : 'ordeal suppressed!'}\n${messages.join('\n')}`);
+      return reply(`⚔️ dealt ${damage} damage and took ${incoming} in return. ${hp ? `ordeal HP: ${hp}` : 'ordeal suppressed!'}\n${messages.join('\n')}`);
     }
   } catch (error) {
-    return reply(`❌ ${error instanceof Error ? error.message : 'unable to perform that action'}`);
+    return reply(`❌ ${error instanceof Error ? error.message : 'couldn’t do that. check your status before trying again'}`);
   }
 }

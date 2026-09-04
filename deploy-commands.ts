@@ -8,27 +8,27 @@ const commands = [
   helpCommand,
   new SlashCommandBuilder()
     .setName('join')
-    .setDescription('join the facility as a new agent!'),
+    .setDescription('join the facility as a new agent'),
 
   new SlashCommandBuilder()
     .setName('start-game')
-    .setDescription('manager only: initialize channels and start the session! 🚀'),
+    .setDescription('manager only: set up the channels and start the shift 🚀'),
 
   new SlashCommandBuilder()
     .setName('pause')
-    .setDescription('manager only: pause or resume facility operations! ⏸️'),
+    .setDescription('manager only: pause or resume facility operations ⏸️'),
 
   new SlashCommandBuilder()
     .setName('status')
-    .setDescription('view your current agent status, facility stats, and active threats!'),
+    .setDescription('view your current agent status, facility stats, and active threats'),
 
   new SlashCommandBuilder()
     .setName('stats')
-    .setDescription('view your four work stats and their current training limit!'),
+    .setDescription('view your four work stats and their current training limit'),
 
   new SlashCommandBuilder()
     .setName('lob')
-    .setDescription('spend LOB points to raise one stat by 5!')
+    .setDescription('spend 5 personal LOB for up to 5 stat points at 08:00')
     .addStringOption(opt => opt
       .setName('stat')
       .setDescription('stat to increase')
@@ -42,7 +42,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('stim')
-    .setDescription('use a researched stim or shield charge!')
+    .setDescription('use a researched stim or shield charge')
     .addStringOption(opt => opt
       .setName('type')
       .setDescription('stim to use')
@@ -58,12 +58,12 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('facility')
-    .setDescription('view the full facility dashboard!'),
+    .setDescription('view the full facility dashboard'),
 
   new SlashCommandBuilder()
     .setName('research')
     .setDescription('manager: research stims, shields or expanded stat limits')
-    .addStringOption(opt => opt.setName('project').setDescription('omit to list projects').addChoices(
+    .addStringOption(opt => opt.setName('project').setDescription('leave blank to list projects').addChoices(
       { name: 'Welfare stims', value: 'welfare_stims' },
       { name: 'Command shields', value: 'command_shields' },
       { name: '150-point stat limits', value: 'extended_stats' }
@@ -72,22 +72,22 @@ const commands = [
   new SlashCommandBuilder()
     .setName('core')
     .setDescription('manager: inspect or start a department core challenge')
-    .addStringOption(opt => opt.setName('department').setDescription('omit to inspect; choose to start').addChoices(...departmentChoices)),
+    .addStringOption(opt => opt.setName('department').setDescription('leave blank to inspect; choose to start').addChoices(...departmentChoices)),
 
   new SlashCommandBuilder()
     .setName('ordeal')
     .setDescription('inspect or fight the active ordeal')
-    .addStringOption(opt => opt.setName('action').setDescription('omit to inspect').addChoices({ name: 'fight', value: 'fight' })),
+    .addStringOption(opt => opt.setName('action').setDescription('leave blank to inspect').addChoices({ name: 'fight', value: 'fight' })),
 
   new SlashCommandBuilder()
     .setName('recruit')
     .setDescription('manager: choose one of three abnormalities, once per day')
-    .addIntegerOption(opt => opt.setName('choice').setDescription('omit to view the three offers').setMinValue(1).setMaxValue(3))
+    .addIntegerOption(opt => opt.setName('choice').setDescription('leave blank to view the three offers').setMinValue(1).setMaxValue(3))
     .addStringOption(opt => opt.setName('department').setDescription('unlocked containment sector; defaults to control').addChoices(...departmentChoices)),
 
   new SlashCommandBuilder()
     .setName('work')
-    .setDescription('work on an abnormality and generate energy!')
+    .setDescription('work on an abnormality and generate energy')
     .addStringOption(opt =>
       opt
         .setName('abnormality')
@@ -117,7 +117,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('info')
-    .setDescription('inspect your personal observation record for an abnormality!')
+    .setDescription('inspect your personal observation record for an abnormality')
     .addStringOption(opt =>
       opt.setName('abnormality')
         .setDescription('abnormality name or ID')
@@ -126,11 +126,11 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('gifts')
-    .setDescription('view your E.G.O. gift collection! 💠'),
+    .setDescription('view your E.G.O. gift collection 💠'),
 
   new SlashCommandBuilder()
     .setName('equip-gift')
-    .setDescription('equip (or unequip) an E.G.O. gift you own! 💠')
+    .setDescription('equip (or unequip) an E.G.O. gift you own 💠')
     .addStringOption(opt =>
       opt
         .setName('gift')
@@ -140,7 +140,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('ego')
-    .setDescription('inspect or purchase unlocked E.G.O. equipment!')
+    .setDescription('browse, buy or equip E.G.O. gear')
     .addStringOption(opt => opt
       .setName('item')
       .setDescription('equipment name or ID; leave blank to list the catalogue')
@@ -148,19 +148,19 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('end-day')
-    .setDescription('trigger the vote to end the day! ☀️'),
+    .setDescription('trigger the vote to end the day ☀️'),
 
   new SlashCommandBuilder()
     .setName('dictator-toggle')
-    .setDescription('manager only: toggle dictator voting mode! 👑'),
+    .setDescription('manager only: toggle dictator voting mode 👑'),
 
   new SlashCommandBuilder()
     .setName('heal-all')
-    .setDescription('manager only: restore HP/SP and remove panic from all living agents! 💖'),
+    .setDescription('manager only: restore HP/SP and remove panic from all living agents 💖'),
 
   new SlashCommandBuilder()
     .setName('abno-test')
-    .setDescription('manager only: add, breach, contain, or reset an abnormality for testing! 🧪')
+    .setDescription('manager only: add, breach, contain, or reset an abnormality for testing 🧪')
     .addStringOption(opt =>
       opt
         .setName('action')
@@ -182,7 +182,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('upgrade')
-    .setDescription('manager only: spend resources on a facility upgrade!')
+    .setDescription('manager only: spend resources on a facility upgrade')
     .addStringOption(opt =>
       opt
         .setName('type')
@@ -198,11 +198,11 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('history')
-    .setDescription('view the facility incident history!'),
+    .setDescription('view the facility incident history'),
 
   new SlashCommandBuilder()
     .setName('radio')
-    .setDescription('listen to or inspect facility radio transmissions!')
+    .setDescription('listen to or inspect facility radio transmissions')
     .addStringOption(opt =>
       opt
         .setName('mode')
@@ -217,19 +217,19 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('work-history')
-    .setDescription('view your private work history and observations!'),
+    .setDescription('view your private work history and observations'),
 
   new SlashCommandBuilder()
     .setName('relationships')
-    .setDescription('view your relationships with other agents!'),
+    .setDescription('view your relationships with other agents'),
 
   new SlashCommandBuilder()
     .setName('departments')
-    .setDescription('view department routes and unlock progress!'),
+    .setDescription('view department routes and unlock progress'),
 
   new SlashCommandBuilder()
     .setName('travel')
-    .setDescription('move to an unlocked department sector!')
+    .setDescription('move to an unlocked department sector')
     .addStringOption(opt =>
       opt
         .setName('department')
@@ -240,7 +240,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('train')
-    .setDescription('manager: train an agent by 5 points using their personal LOB at 08:00')
+    .setDescription('manager: train an agent by up to 5 points using their personal LOB at 08:00')
     .addUserOption(opt =>
       opt
         .setName('agent')
@@ -262,21 +262,21 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('save')
-    .setDescription('manager only: save current facility state!')
+    .setDescription('manager only: save the current facility')
     .addStringOption(opt =>
       opt.setName('slot').setDescription('name of the save slot').setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('load')
-    .setDescription('manager only: load a saved facility state!')
+    .setDescription('manager only: load a facility save')
     .addStringOption(opt =>
       opt.setName('slot').setDescription('name of the save slot to load').setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('rewind')
-    .setDescription('manager only: rewind the facility to the latest memory checkpoint!')
+    .setDescription('manager only: rewind the facility to the latest memory checkpoint')
 ].map(cmd => cmd.toJSON());
 
 const token = process.env.DISCORD_TOKEN;

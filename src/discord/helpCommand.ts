@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { EmbedBuilder, MessageFlags, SlashCommandBuilder } from 'discord.js';
 
 // Keep Discord help and the player guide on disk in sync automatically.
 const guide = readFileSync(new URL('../../docs/PLAYER_GUIDE.md', import.meta.url), 'utf8');
@@ -29,7 +29,7 @@ function discordMarkdown(body: string) {
 export async function handleHelpCommand(interaction: any) {
   const requested = interaction.options.getString('topic') ?? 'getting-started';
   const topic = HELP_TOPICS.find(entry => entry.value === requested);
-  if (!topic) return interaction.reply({ content: 'unknown guide topic — use /help and pick a topic from the list.', ephemeral: true });
+  if (!topic) return interaction.reply({ content: 'unknown guide topic — use /help and pick a topic from the list.', flags: MessageFlags.Ephemeral });
   const body = discordMarkdown(topic.body);
   const pages: string[] = [];
   let page = '';
@@ -39,11 +39,11 @@ export async function handleHelpCommand(interaction: any) {
   }
   if (page) pages.push(page);
   return interaction.reply({
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
     embeds: pages.map((description, index) => new EmbedBuilder()
       .setColor(0x80d8d0)
-      .setTitle(`facility player guide — ${topic.title}${pages.length > 1 ? ` (${index + 1}/${pages.length})` : ''}`)
+      .setTitle(`facility guide · ${topic.title}${pages.length > 1 ? ` (${index + 1}/${pages.length})` : ''}`)
       .setDescription(description)
-      .setFooter({ text: 'use /help topic:… to read another chapter • includes bot-specific adaptations' })),
+      .setFooter({ text: 'looking for something else? /help topic:…' })),
   });
 }

@@ -1,21 +1,21 @@
 # facility player guide
 
-produce Enkephalin (shown as **energy**), meet the daily quota, keep agents alive and suppress containment failures. read management information before taking risks.
+make energy, meet the quota, and try to get everyone home alive. check an abnormality's info before sending someone in.
 
-this bot adapts the supplied *A Guide to Tuantu's Lobotomization Branches!* by Pandawanwan (25 May 2025). the excerpt describes systems but not every price, formula or challenge. bot-specific balance choices are identified below; this is not a claim of exact parity with the original game.
+based on *A Guide to Tuantu's Lobotomization Branches!* by Pandawanwan (25 May 2025). this guide covers the discord version; some rules differ from the original game.
 
 ## getting started
 
-read this guide inside Discord with `/help`. choose `/help topic:…` for work, stats, E.G.O., stims, ordeals, departments, recruitment or death and saves. replies are private to you; joining first is not required.
+new here? start with `/join`. you can come back to `/help` whenever you need it, or pick a topic for the details. only you can see the reply, and you don't need an agent to read it.
 
-1. `/join` creates your agent; the manager uses `/start-game`.
-2. `/status` shows health, sanity and gear. `/stats` shows base stat points, personal LOB, PE balances, cards and department service rank.
-3. `/work` offers abnormality, work-type and level choices. only the prompt's owner can use it.
-4. `/info abnormality:NAME` reveals your personal observations.
-5. suppress breaches through their alert buttons; fight ordeals with `/ordeal action:fight`.
-6. `/end-day` moves to the next day. active breaches and ordeals must be cleared first.
+1. `/join` makes your agent. the manager starts the facility with `/start-game`.
+2. check `/status` for health, sanity and gear. `/stats` has your stat points, LOB, PE, cards and department rank.
+3. use `/work` to pick an abnormality, work type and level. nobody else can use your work prompt.
+4. check what you've learned with `/info abnormality:NAME`.
+5. something escaped? use the buttons on its breach alert. for ordeals, use `/ordeal action:fight`.
+6. clear any breaches and ordeals before `/end-day`.
 
-work advances the clock from 08:00 toward 22:00. no new work begins after 22:00. the opening **08:00 phase is the bot's intermission**: spend training LOB before the first work of that day.
+work moves the clock from 08:00 to 22:00. **08:00 is your training window**, so spend your LOB before anyone starts working. at 22:00, no more work can start.
 
 ## abnormalities and work
 
@@ -27,44 +27,43 @@ work advances the clock from 08:00 toward 22:00. no new work begins after 22:00.
 | WAW | purple | high |
 | ALEPH | red | highest |
 
-preferences, agent condition, work level, equipment and scripts all matter. a favorable work type cannot cancel a special execution condition.
+each abnormality has its own preferences and rules. the right work type helps, but it won't save you from breaking a rule that kills your agent. check your health, gear and work level too.
 
-| work | trained stat | guide color |
+| work | trained stat | color |
 | --- | --- | --- |
 | instinct | fortitude | red |
 | insight | prudence | white |
 | attachment | temperance | black |
 | repression | justice | pale |
 
-a survived, completed work with a positive box grants **one point to its matching stat**. EXP still levels agents; promotion grants one extra random stat point. higher work levels increase risk.
+finish a work alive with at least one positive box to earn **+1 to the matching stat**. leveling up also gives +1 to a random stat. higher work levels are riskier.
 
-observation and spending are separate:
+working also teaches you about that abnormality:
 
-- each work type records up to two unique observations.
-- two observations of a work type reveal its preference; four total reveal tips; eight fully reveal the abnormality.
-- positive boxes from survived work also build **spendable PE for that exact abnormality instance**.
-- buying gear does not erase observations. other players' knowledge, other sources' PE and the shared codex cannot pay for your extraction.
+- each work type can give you two observations. two reveal its preference, four total reveal tips, and eight reveal everything.
+- positive boxes from work you survive give you **PE tied to that exact abnormality**. even two copies of the same abnormality have separate balances.
+- spending PE doesn't erase what you've learned. another player's observations and the shared codex don't count as your own.
 
 ## stats, LOB and cards
 
-the base stat cap is **100**. manager research `extended_stats` raises it to **150**. **Break Your Limits** adds 25, allowing 125 or 175.
+stats normally cap at **100**. the manager can research `extended_stats` to raise that to **150**. the **Break Your Limits** card adds another 25, for a cap of 125 or 175.
 
-bot adaptation: that card is awarded after a survived work at agent level 5 or higher, once per agent. the source is uncertain about card acquisition; other card effects have not been invented.
+you get Break Your Limits once you survive a work at level 5 or above. you can only get it once per agent; it's the only card available right now.
 
-new agents receive **10 personal LOB**. every quota-complete day awards **10 personal LOB to each surviving agent**. this is separate from shared facility LOB, which funds upgrades and research.
+you start with **10 personal LOB** and earn **10 more** for each day you survive with the quota met. your LOB pays for training and gear. the facility has a separate balance for upgrades and research.
 
 ```text
 /lob stat:fortitude
 /train agent:@player stat:prudence
 ```
 
-both purchase up to **+5 points for 5 of that agent's personal LOB**, only at 08:00. `/train` is manager-only; `/lob` trains yourself. near the cap, gain is limited to available room. at the cap, no currency is consumed. dead or working agents cannot train.
+training costs **5 personal LOB for up to +5 points**, only at 08:00. use `/lob` for yourself; the manager can use `/train` for someone else, paid from that agent's LOB. near the cap you'll get fewer points for the same price. already capped? you won't be charged. dead or working agents can't train.
 
-existing combat/script balance uses tiers: each 20-point band becomes one tier, rounded up. old 1–5-tier agents map to 20–100 points on first progression use, without repeated conversion. HP/SP, gifts and script checks retain the bot's existing tier-based balance. `/stats` shows base point progress; `/status` includes equipment and gift effects.
+combat uses stat tiers: 1–20 points is tier 1, 21–40 is tier 2, and so on. health, sanity and abnormality stat checks use those tiers. older agents' tier 1–5 stats convert to 20–100 points once. `/stats` shows your base points; `/status` includes gear and gift effects.
 
 ## E.G.O. equipment and gifts
 
-`/ego` lists extractable items. `/ego item:penitence` buys and equips one; selecting an owned item re-equips it for free.
+use `/ego` to see the gear list. `/ego item:penitence` buys and equips Penitence. already own it? equipping it again is free.
 
 | item id | fully observed source | personal LOB | source PE |
 | --- | --- | ---: | ---: |
@@ -73,7 +72,7 @@ existing combat/script balance uses tiers: each 20-point band becomes one tier, 
 | mimicry | Nothing There | 25 | 8 |
 | mimicry_suit | Nothing There | 25 | 8 |
 
-you need **your own 8/8 record** and enough PE from the same source instance. extraction permanently adds gear to inventory and equips it. failed purchases consume nothing. gear survives restart and saves. no source-to-gear data means **no extractable gear**; a behavior script alone does not supply equipment metadata.
+you need **your own 8/8 observation record**, enough personal LOB, and PE from that same abnormality. bought gear stays in your inventory and saves; a failed purchase costs nothing. only the items listed above are available for extraction right now.
 
 | incoming damage | effect |
 | --- | --- |
@@ -82,13 +81,13 @@ you need **your own 8/8 record** and enough PE from the same source instance. ex
 | BLACK | damages both HP and SP, not divided between them |
 | PALE | percentage of maximum HP, followed by modifiers and a matching shield |
 
-**lower suit multipliers mean better resistance**: 0.5 reduces damage; 1.5 increases it. this corrects the contradictory resistance sentence in the supplied excerpt. traits, gifts and suit defense also modify damage. enemies use HP; WHITE weapons still damage enemies, and PALE weapons scale from enemy maximum HP.
+**lower suit multipliers are better**: 0.5 means half damage, 1.5 means one and a half times damage. traits and gifts can change damage too. enemies only have HP, so WHITE weapons still hurt them; PALE weapons deal a percentage of their maximum HP.
 
-configured gifts remain suppression drops. the existing bot uses 15% + 5% per risk tier, capped at 55%, prevents duplicate ownership, and preserves each gift's benefits/drawbacks. these are bot rates, not guide rarity data. inspect `/gifts`; equip with `/equip-gift gift:NAME`.
+gifts can drop from suppression. the chance is 15% + 5% per risk tier, up to 55%, and you can't own duplicates. check `/gifts` before equipping one with `/equip-gift gift:NAME`: some have drawbacks as well as bonuses.
 
 ## stims and research
 
-the manager uses `/research` to list projects or `/research project:NAME` to buy one.
+research is manager-only and costs facility LOB. `/research` lists the projects; `/research project:NAME` buys one.
 
 | project | required department | facility LOB | unlock |
 | --- | --- | ---: | --- |
@@ -96,17 +95,19 @@ the manager uses `/research` to list projects or `/research project:NAME` to buy
 | command_shields | command | 50 | red, white and black shields |
 | extended_stats | training | 100 | 150-point base stat limit |
 
-use `/stim type:health`, `/stim type:sanity` or a shield color. health/sanity restore 25% of the corresponding maximum. a full pool does not waste a charge. sanity recovery clears panic metadata and puts panicked/traumatized staff into recovery.
+use `/stim type:health`, `/stim type:sanity` or pick a shield color. health and sanity stims restore 25% of your maximum. using one at full health or sanity won't waste it. a sanity stim also clears panic or trauma and puts your agent into recovery.
 
-shields absorb **25 actual damage points** of their own color. red shields do not protect against BLACK. pale shields absorb damage after percentage conversion, not percentage points.
+shields block **25 damage** of their own color. red won't block BLACK. pale shields block HP damage after the percentage is worked out, not 25 percentage points.
 
-**pale requires command_shields research AND the Command/Tiphereth core challenge.** research gates apply even if an older save has charges.
+**pale shields need both `command_shields` research and a cleared Command/Tiphereth core.** having charges in an old save doesn't skip the unlock.
 
-research issues an unlocked loadout. new days refill health/sanity to two each and researched shields to one each, and clear active shields. pale charges arrive with the next loadout after the core unlock. dead or working agents cannot use stims.
+buying research gives you the supplies it unlocks. each new day refills health/sanity stims to two each and unlocked shields to one each. active shields reset too. after clearing Command's core, pale charges come with your next refill. you can't use stims while dead or working.
 
 ## meltdowns and ordeals
 
-after each completed facility-wide work, the bot attempts a new alarm if none is active. up to three targets receive a **two-work-action timer**; the triggering action consumes the first tick. these are actions, not real seconds. working a targeted abnormality defuses its current timer. expiry drops Qliphoth to zero; non-breaching abnormalities do not gain fake breach flags, though scripts may react to the counter event.
+after someone finishes work, a meltdown alarm can target up to three abnormalities if no alarm is already active. the timer is **two completed works**, and the work that triggers it counts as the first tick. it isn't a real-time countdown.
+
+work on a marked abnormality to defuse its timer. let it expire and its Qliphoth drops to zero. abnormalities that can't breach still won't escape, but their other effects may trigger.
 
 | stage | meltdown level | possible colors | shared HP |
 | --- | ---: | --- | ---: |
@@ -115,13 +116,15 @@ after each completed facility-wide work, the bot attempts a new alarm if none is
 | dusk | 3 | green | 400 |
 | midnight | 4 | green | 800 |
 
-stages occur once each per day, one active at a time. energy alone no longer spawns ordeals. `/ordeal` shows the encounter; `/ordeal action:fight` uses equipped gear and receives retaliation. violet attacks sanity; the other current encounters retaliate physically. attacks have a short cooldown. zero shared HP suppresses the encounter; unresolved encounters block ending the day.
+each stage can happen once per day, with only one ordeal active at a time. meltdown level triggers them, not your energy total.
 
-the color pools follow the guide. levels, HP and damage are **Discord adaptations**, paced to fit a shift. these are simplified shared encounters, not full color-specific movement/minion/boss simulations.
+check `/ordeal`, then use `/ordeal action:fight` to attack with your equipped weapon. it hits back: violet damages sanity, the others damage HP. there's a short cooldown between attacks. everyone chips away at the same health bar; bring it to zero before ending the day.
+
+ordeals here are shared fights, without the original game's moving enemies, minions or full boss patterns.
 
 ## departments and core suppression
 
-`/departments` shows quests, routes, layers and Sephirot. `/travel department:NAME` takes work-driven phases; it neither teleports nor heals you.
+check `/departments` for quests and routes. `/travel department:NAME` starts a trip; completed works advance your travel time. travelling doesn't heal you.
 
 | layer | department | Sephirah |
 | --- | --- | --- |
@@ -135,9 +138,9 @@ the color pools follow the guide. levels, HP and damage are **Discord adaptation
 | Atziluth | extraction | Binah |
 | Atziluth | record | Hokma |
 
-Architecture remains unavailable, as in the guide. keyboard/mobile controls and elevator music do not apply to the bot.
+Architecture isn't available.
 
-the bot unlock chain and objectives are:
+finish each department's quest to open the next:
 
 1. Control: collect 40 energy → Information.
 2. Information: fully document three unique abnormalities → Security.
@@ -149,26 +152,32 @@ the bot unlock chain and objectives are:
 8. Extraction: buy three previously unowned E.G.O. items → Record.
 9. Record: finish three quota-met days.
 
-only unlocked departments earn quest progress, except Extraction also counts existing owned catalogue gear when it opens. service rank counts survived work while stationed in a department: level 1 initially, level 2 at 5 assignments, level 3 at 15 and captain at 30. ranks are titles, not added combat buffs.
+quests only count progress after their department opens. Extraction is the exception: gear you already own counts toward its quest too.
 
-after completing its quest, the manager can start `/core department:NAME`. one challenge can be active. **five good, survived works while stationed in that department** clear it. the Information challenge obscures `/info`, its buttons, `/stats`, `/history` and `/work-history`; Discord chat is not deleted or modified.
+survive work while stationed in a department to build your service rank: level 1 to start, level 2 at 5 works, level 3 at 15, and captain at 30. ranks don't give combat bonuses.
 
-clearing a core permanently prevents that department's Qliphoth meltdowns, including already assigned timers. it does not prevent scripted breaches or natural escape. Command unlocks eligibility for pale shields.
+once a department's quest is done, the manager can start `/core department:NAME`. only one core can be active. clear it with **five good works that you survive while stationed there**. Information's core hides `/info`, its buttons, `/stats`, `/history` and `/work-history` until you finish; it doesn't touch server messages.
 
-these five-work challenges are an explicit stand-in for full Sephirah bosses. the excerpt lacks most win conditions; only the Information visibility effect has a distinct implementation.
+clearing a core stops that department's Qliphoth meltdowns permanently and removes any active timers there. abnormalities can still escape through their usual rules. clearing Command also unlocks pale shields if you've researched them.
+
+cores use the five-work challenge here, not the original boss fights. Information is currently the only one with an extra challenge effect.
 
 ## recruitment and manager tests
 
-`/recruit` gives the manager **three persistent offers**. `/recruit choice:1 department:control` accepts one and places it in an unlocked sector. one acceptance is allowed per day; reopening the menu does not reroll it. recruitment supplements the existing starter set.
+the manager can use `/recruit` to see **three offers**, then `/recruit choice:1 department:control` to take one. pick an unlocked department to house it. you get one pick per day on top of the starter abnormalities, and reopening the menu won't reroll the offers.
 
-configured templates retain their balance. registry-only ids from `src/game/abnormalities/scripts.ts` use generic HE test stats with real behavior hooks, not invented canonical metadata or gear.
+some abnormalities have working special effects but no finished stats yet. those use placeholder HE stats and don't come with extractable gear. their displayed risk may not match the original game.
 
-`/abno-test` bypasses normal pacing for debugging: add, breach, contain or reset. dangerous scripts such as `DO-NOT-TOUCH` remain dangerous. use a separate facility or a save first. debug containment does not earn suppression quest credit.
+`/abno-test` lets the manager add, breach, contain or reset abnormalities for testing. save first or use a test server. **DO-NOT-TOUCH still does what it says.** containing something with this command doesn't count toward suppression quests.
 
 ## panic, death and saves
 
-zero sanity enters panic. dominant stats influence behavior; unsupported panic can progress to trauma. the guide's advice about killing panicked staff is not an extra player command.
+at zero sanity, your agent panics. their strongest stat affects how they behave, and leaving them like that can lead to trauma. use a sanity stim if you have one unlocked. there's no command to kill panicked staff.
 
-after death one or two, `/join` revives your agent. the third death wipes the active agent's stats, inventory, wallets, cards, service ranks and personal records; the next `/join` starts fresh. shared facility history stays. manager saves/checkpoints are explicit rollback snapshots and can restore earlier game state, including earlier deaths.
+**first or second death:** `/join` revives your agent.
 
-`/save`, `/load` and `/rewind` include progression, equipment, source PE, research, cores, recruitment offers and ordeal state. old saves lacking new fields use legacy defaults; active legacy placeholder ordeals become playable Dawn encounters. old aggregate PE cannot be reliably assigned to a source, so it is not converted into source-specific spending balances.
+**third death:** your agent's stats, gear, currency, cards, ranks and personal records are wiped. your next `/join` starts fresh. shared facility history stays.
+
+the manager's `/save`, `/load` and `/rewind` cover agents and facility progress: gear, PE, research, cores, recruitment and ordeals. loading an earlier save also rolls back deaths since that save.
+
+older saves use defaults for anything they don't have. an unfinished old-style ordeal becomes a Dawn encounter. old pooled PE doesn't become spendable abnormality PE; you'll need to earn that through work.

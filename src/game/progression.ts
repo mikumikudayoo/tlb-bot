@@ -134,7 +134,7 @@ export function purchaseEgo(guildId: string, userId: string, itemId: string) {
   return db.transaction(() => {
     const { agent } = getActor(guildId, userId);
     const item = EGO_CATALOG.find(entry => entry.id === itemId);
-    if (!item) throw new Error('no extractable E.G.O. data for that item');
+    if (!item) throw new Error('that item isn’t available for extraction');
     const p = agentProgress(agent);
     if (!p.inventory.includes(item.id)) {
       const sources = db.query(`SELECT a.id, k.instinct_pe+k.insight_pe+k.attachment_pe+k.repression_pe AS observed
@@ -160,7 +160,7 @@ export function researchProject(guildId: string, managerId: string, key: string)
     if (!project) throw new Error('unknown research project');
     const p = facilityProgress(f);
     if (!JSON.parse(f.department_unlocks || '[]').includes(project.department)) throw new Error(`unlock ${project.department} first`);
-    if (p.research.includes(key)) throw new Error('research is already completed');
+    if (p.research.includes(key)) throw new Error('that research is already finished');
     if (Number(f.lob_points) < project.cost) throw new Error(`research costs ${project.cost} facility LOB`);
     db.query('UPDATE facility SET lob_points=lob_points-? WHERE guild_id=?').run(project.cost, guildId);
     p.research.push(key);
@@ -179,7 +179,7 @@ export function useStim(agent: any, facility: any, type: string) {
   if (!(type in enabled) || !enabled[type as keyof typeof enabled]) throw new Error('research this stim first; pale also requires the command core suppression');
   if (['dead', 'working'].includes(agent.status)) throw new Error('dead or working agents cannot use stims');
   const charges = object(agent.stim_charges);
-  if (count(charges[type]) < 1) throw new Error('no charges left; researched stims refill at the next day');
+  if (count(charges[type]) < 1) throw new Error('no charges left. unlocked stims refill each new day');
   if (type === 'health' || type === 'sanity') {
     const key = type === 'health' ? 'hp' : 'sp';
     if (agent[key] >= agent[`max_${key}`]) throw new Error(`${key} is already full`);

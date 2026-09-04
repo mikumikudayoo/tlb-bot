@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { MessageFlags } from 'discord.js';
 import { existsSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1302,7 +1303,8 @@ describe('TLB facility torture test', () => {
       }, ownerId);
 
       expect(replies).toHaveLength(1);
-      expect(replies[0].ephemeral).toBe(true);
+      expect(replies[0].flags).toBe(MessageFlags.Ephemeral);
+      expect(replies[0]).not.toHaveProperty('ephemeral');
       expect(replies[0].content).toContain(`<@${ownerId}>`);
     });
 

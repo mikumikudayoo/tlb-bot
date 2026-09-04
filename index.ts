@@ -1,5 +1,6 @@
 import {
   Client,
+  MessageFlags,
   GatewayIntentBits,
   EmbedBuilder,
   ActionRowBuilder,
@@ -1817,7 +1818,7 @@ async function rejectUnavailableWorkPrompt(interaction: any, ownerId?: string) {
   const content = ownerId
     ? `🔒 this work prompt belongs to <@${ownerId}>. use \`/work\` to open your own prompt!`
     : '⌛ this work prompt predates the ownership update. use `/work` to open a fresh prompt!';
-  await interaction.reply({ content, ephemeral: true });
+  await interaction.reply({ content, flags: MessageFlags.Ephemeral });
 }
 
 function buildLevelRow(workType: WorkType, abno: any, ownerId: string) {
@@ -1851,27 +1852,27 @@ function levelPreviewText(agent: any, abno: any, workType: WorkType, facility: a
 }
 
 async function executeWork(interaction: any, agent: any, abno: any, workType: WorkType, facility: any, level: number = 1) {
-  if (agent.status === 'working') return interaction.reply({ content: '⏳ finish your current work assignment first.', ephemeral: true });
+  if (agent.status === 'working') return interaction.reply({ content: '⏳ finish your current work assignment first.', flags: MessageFlags.Ephemeral });
   if (!abno) {
-    return interaction.reply({ content: '❌ that abnormality no longer exists!', ephemeral: true });
+    return interaction.reply({ content: '❌ that abnormality is no longer here. open `/work` again.', flags: MessageFlags.Ephemeral });
   }
   if (abno.is_breaching) {
-    return interaction.reply({ content: '🚨 this abnormality has breached! suppress it instead of working on it!', ephemeral: true });
+    return interaction.reply({ content: '🚨 that abnormality has escaped. contain it before assigning work.', flags: MessageFlags.Ephemeral });
   }
   if (agent.status === 'dead') {
-    return interaction.reply({ content: '💀 you are dead and cannot work.', ephemeral: true });
+    return interaction.reply({ content: '💀 your agent is dead. use `/join` before taking more work.', flags: MessageFlags.Ephemeral });
   }
   if (agent.status === 'panicked' || agent.status === 'traumatized') {
-    return interaction.reply({ content: `🧠 you are ${agent.status}. recover before working again!`, ephemeral: true });
+    return interaction.reply({ content: `🧠 your agent is ${agent.status}. recover before taking more work.`, flags: MessageFlags.Ephemeral });
   }
   if (Number(agent.travel_remaining ?? 0) > 0) {
     return interaction.reply({
       content: `🚪 you are currently traveling from **${agent.travel_origin}** to **${agent.travel_destination}**. arrival in ${agent.travel_remaining} phase(s).`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
   if (Number(facility.phase) >= 22) {
-    return interaction.reply({ content: '🌙 the shift has reached **22:00**. no further work may begin until `/end-day` resets operations.', ephemeral: true });
+    return interaction.reply({ content: '🌙 it’s **22:00**. work is over for today; clear any threats, then use `/end-day`.', flags: MessageFlags.Ephemeral });
   }
 
   const maxLevel = WORK_LEVEL_MAX[abno.risk] ?? 2;
@@ -2550,14 +2551,14 @@ function restoreState(guildId: string, state: any) {
 async function endDay(interaction: any, facility: any) {
   const guildId = interaction.guildId!;
   if (db.query("SELECT 1 FROM agents WHERE guild_id=? AND status='working' LIMIT 1").get(guildId)) {
-    return interaction.reply({ content: '⏳ let the current work assignment finish before ending the day.', ephemeral: true });
+    return interaction.reply({ content: '⏳ let the current work assignment finish before ending the day.', flags: MessageFlags.Ephemeral });
   }
-  if (facility.ordeal_active) return interaction.reply({ content: '⚠️ suppress the active ordeal with `/ordeal action:fight` before ending the day.', ephemeral: true });
+  if (facility.ordeal_active) return interaction.reply({ content: '⚠️ suppress the active ordeal with `/ordeal action:fight` before ending the day.', flags: MessageFlags.Ephemeral });
   const activeBreaches = db.query(`SELECT * FROM abnormalities WHERE guild_id=? AND is_breaching=1`).all(guildId) as any[];
   if (activeBreaches.length) {
     return interaction.reply({
       content: `🚨 the shift cannot be reset while containment is breached. suppress: ${activeBreaches.map(a => `**${a.name}**`).join(', ')}`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
   const quotaMet = facility.energy >= facility.quota;
@@ -2626,8 +2627,8 @@ async function endDay(interaction: any, facility: any) {
 const client = createDiscordClient();
 
 client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`wonderhooi!! ✨ logged in as ${readyClient.user.tag}!`);
-  console.log('facility simulation v2 is online!! 🚀💖');
+  console.log(`✨ logged in as ${readyClient.user.tag}`);
+  console.log('facility is online. ready for the next shift 🎪');
 
   // Repair/recreate persisted facility channels after restarts or manual deletion.
   for (const guild of readyClient.guilds.cache.values()) {
@@ -2656,7 +2657,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (activeCore?.department === 'information' && (
       (interaction.isChatInputCommand() && ['info', 'stats', 'history', 'work-history'].includes(interaction.commandName)) ||
       (interaction.isButton() && customId.startsWith('info_'))
-    )) return interaction.reply({ content: '📵 information is obscured until the Yesod core challenge is complete.', ephemeral: true });
+    )) return interaction.reply({ content: '📵 information is obscured until the Yesod core challenge is complete.', flags: MessageFlags.Ephemeral });
 
     if ((interaction.isButton() || interaction.isStringSelectMenu()) && workPromptRejection) {
       return rejectUnavailableWorkPrompt(interaction, workPromptRejection.ownerId);
@@ -2675,11 +2676,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
           if (reviveAgent(existing)) {
             logEvent(guildId, facility.day_count, facility.phase, 'revival', `${existing.name} was revived after death ${existing.death_count}.`);
             return interaction.reply(
-              `🫀 welcome back, agent **${existing.name}**!! your progression has been restored.\n` +
+              `🫀 welcome back, **${existing.name}**. your agent is back on their feet.\n` +
               `💀 deaths: **${existing.death_count}/3** — the third death wipes this agent's data.`
             );
           }
-          return interaction.reply({ content: 'you are already an agent silly!! 🎀', ephemeral: true });
+          return interaction.reply({ content: 'you already have an agent 🎀 check `/status` or pick some work with `/work`.', flags: MessageFlags.Ephemeral });
         }
 
         const trait = pick(Object.keys(TRAITS));
@@ -2715,16 +2716,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
         logEvent(guildId, facility.day_count, facility.phase, 'agent_joined', `${user.username} joined as a new agent.`);
         db.query('UPDATE agents SET stim_charges=? WHERE guild_id=? AND discord_id=?').run(JSON.stringify(Progression.stimLoadout(facility)), guildId, user.id);
         await interaction.reply(
-          `welcome to the corporation, agent **${user.username}**!! ✨\n` +
+          `welcome aboard, **${user.username}** ✨\n` +
           `you've been assigned the **${TRAITS[trait]?.name ?? trait}** trait.\n` +
           `stats: 💪 ${fortitude} · 🧠 ${prudence} · 💗 ${temperance} · ⚔️ ${justice}\n` +
-          `grab your standard issue riot stick and try not to die!! 🎀`
+          `your riot stick is ready. check /help before your first shift 🎀`
         );
       }
 
       else if (commandName === 'start-game') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can start the game!! 😠', ephemeral: true });
-        if (facility.is_started === 1) return interaction.reply({ content: 'the facility is already up and running!! ✨', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can start the shift.', flags: MessageFlags.Ephemeral });
+        if (facility.is_started === 1) return interaction.reply({ content: 'we’re already running ✨ check `/facility` for the current shift.', flags: MessageFlags.Ephemeral });
 
         await interaction.deferReply();
         db.query(`UPDATE facility SET is_started=1 WHERE guild_id=?`).run(guildId);
@@ -2737,19 +2738,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const radioCh = guild.channels.cache.get(repaired.radio_channel_id) as any;
         if (controlCh?.send) await controlCh.send({ content: `🏢 **CONTROL TEAM ONLINE**\nmanager operations are active. use \`/facility\` to inspect the simulation.` });
         if (statusCh?.send) await statusCh.send({ embeds: [facilityDashboard(db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any, db.query(`SELECT * FROM agents WHERE guild_id = ?`).all(guildId) as any[], db.query(`SELECT * FROM abnormalities WHERE guild_id=?`).all(guildId) as any[])] });
-        if (radioCh?.send) await radioCh.send({ content: `📻 **FACILITY RADIO ONLINE**\nall employees: communications routing has been restored.` });
+        if (radioCh?.send) await radioCh.send({ content: `📻 **FACILITY RADIO ONLINE**\nradio check. we’re back on air.` });
         createMemoryCheckpoint(guildId, db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any);
 
-        await interaction.editReply(`🎉 **FACILITY OPERATIONS STARTED!** persistent facility channels are online.`);
+        await interaction.editReply(`🎪 **shift started.** the facility channels are ready.`);
         logEvent(guildId, facility.day_count, facility.phase, 'facility_start', 'Facility operations started.');
       }
 
       else if (commandName === 'pause') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can pause operations!!', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can pause or resume the shift.', flags: MessageFlags.Ephemeral });
         const newStatus = facility.is_paused ? 0 : 1;
         db.query(`UPDATE facility SET is_paused=? WHERE guild_id=?`).run(newStatus, guildId);
         logEvent(guildId, facility.day_count, facility.phase, 'facility', newStatus ? 'Operations paused.' : 'Operations resumed.');
-        await interaction.reply(newStatus ? '⏸️ facility operations have been **PAUSED**!' : '▶️ facility operations have been **RESUMED**!');
+        await interaction.reply(newStatus ? '⏸️ shift paused.' : '▶️ shift resumed. back to work.');
       }
 
       else if (commandName === 'facility') {
@@ -2761,7 +2762,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       else if (commandName === 'status') {
         const agent = findAgent(user.id, guildId);
-        if (!agent) return interaction.reply({ content: 'you are not an agent! `/join` first!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
         await interaction.reply({ embeds: [agentStatusEmbed(agent, facility)] });
       }
 
@@ -2771,51 +2772,51 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const selected = (db.query(`SELECT * FROM abnormalities WHERE guild_id=? ORDER BY id`).all(guildId) as any[])
           .find(a => a.name.toLowerCase().includes(targetId.toLowerCase()) || String(a.id) === targetId);
 
-        if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetId}**.`, ephemeral: true });
+        if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetId}**.`, flags: MessageFlags.Ephemeral });
 
         const agent = findAgent(user.id, guildId);
-        if (!agent) return interaction.reply({ content: 'you need to `/join` first!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
         const built = buildInformationEmbed(interaction.guild, agent, selected, 'overview');
         await interaction.reply({ embeds: [built.embed], components: [built.row] });
       }
 
       else if (commandName === 'gifts') {
         const agent = findAgent(user.id, guildId);
-        if (!agent) return interaction.reply({ content: 'you are not an agent! `/join` first!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
         const owned = JSON.parse(agent.ego_gifts || '[]') as string[];
         if (!owned.length) {
-          return interaction.reply({ content: '💠 you have not acquired any E.G.O. gifts yet. suppress a breaching abnormality for a chance at one!', ephemeral: true });
+          return interaction.reply({ content: '💠 you have not acquired any E.G.O. gifts yet. suppress a breaching abnormality for a chance at one!', flags: MessageFlags.Ephemeral });
         }
         const lines = owned
           .map(id => EGO_GIFTS[id])
           .filter((gift): gift is GiftDef => !!gift)
           .map(gift => `${gift.icon} **${gift.name}** *(from ${gift.sourceAbno})*${agent.equipped_gift === gift.id ? ' ✅ equipped' : ''}\n${gift.drawback}`)
           .join('\n\n');
-        await interaction.reply({ content: `💠 **${agent.name}'S E.G.O. GIFTS**\n\n${lines}`, ephemeral: true });
+        await interaction.reply({ content: `💠 **${agent.name}'S E.G.O. GIFTS**\n\n${lines}`, flags: MessageFlags.Ephemeral });
       }
 
 
       else if (commandName === 'equip-gift') {
         const agent = findAgent(user.id, guildId);
-        if (!agent) return interaction.reply({ content: 'you are not an agent! `/join` first!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
         const query = interaction.options.getString('gift', true).trim().toLowerCase();
 
         if (query === 'none' || query === 'unequip') {
           db.query(`UPDATE agents SET equipped_gift='' WHERE discord_id=? AND guild_id=?`).run(user.id, guildId);
-          return interaction.reply({ content: '💠 gift unequipped.', ephemeral: true });
+          return interaction.reply({ content: '💠 gift unequipped.', flags: MessageFlags.Ephemeral });
         }
 
         const owned = JSON.parse(agent.ego_gifts || '[]') as string[];
         const matchId = owned.find(id => EGO_GIFTS[id] && EGO_GIFTS[id].name.toLowerCase().includes(query));
-        if (!matchId) return interaction.reply({ content: `❌ you don't own a gift matching **${query}**. check \`/gifts\`.`, ephemeral: true });
+        if (!matchId) return interaction.reply({ content: `❌ you don't own a gift matching **${query}**. check \`/gifts\`.`, flags: MessageFlags.Ephemeral });
 
         db.query(`UPDATE agents SET equipped_gift=? WHERE discord_id=? AND guild_id=?`).run(matchId, user.id, guildId);
         const gift = EGO_GIFTS[matchId]!;
-        await interaction.reply(`💠 **${gift.icon} ${gift.name}** equipped!!\n${gift.drawback}`);
+        await interaction.reply(`💠 **${gift.icon} ${gift.name}** equipped.\n${gift.drawback}`);
       }
 
       else if (commandName === 'dictator-toggle') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can change dictator mode!!', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can change dictator mode.', flags: MessageFlags.Ephemeral });
         const newMode = facility.dictator_mode ? 0 : 1;
         db.query(`UPDATE facility SET dictator_mode=? WHERE guild_id=?`).run(newMode, guildId);
         logEvent(guildId, facility.day_count, facility.phase, 'mode', newMode ? 'Dictator mode enabled.' : 'Democracy mode enabled.');
@@ -2825,7 +2826,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       else if (commandName === 'heal-all') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can do that.', flags: MessageFlags.Ephemeral });
         const agents = db.query(`SELECT * FROM agents WHERE guild_id = ? AND status != 'dead'`).all(guildId) as any[];
         for (const agent of agents) {
           agent.hp = agent.max_hp;
@@ -2835,29 +2836,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
           updateAgent(agent);
         }
         logEvent(guildId, facility.day_count, facility.phase, 'admin', 'Manager healed all living agents.');
-        await interaction.reply('💖 all living agents have been fully healed and stabilised!!');
+        await interaction.reply('💖 everyone still alive is back to full health and sanity. panic cleared.');
       }
 
       else if (commandName === 'abno-test') {
         if (facility.manager_id !== user.id) {
-          return interaction.reply({ content: '🔒 only the facility manager can use abnormality testing controls!', ephemeral: true });
+          return interaction.reply({ content: '🔒 only the facility manager can use abnormality testing controls!', flags: MessageFlags.Ephemeral });
         }
         const action = interaction.options.getString('action', true) as AbnormalityTestAction;
         const abnormalityInput = interaction.options.getString('abnormality', true);
         const result = runAbnormalityTestAction(guildId, action, abnormalityInput);
-        if (!result.ok) return interaction.reply({ content: result.message, ephemeral: true });
+        if (!result.ok) return interaction.reply({ content: result.message, flags: MessageFlags.Ephemeral });
         logEvent(guildId, facility.day_count, facility.phase, 'manager_test', `${user.username}: ${result.message.replace(/\*\*/g, '')}`);
         await interaction.reply(`${result.message}\n🧪 manager testing action: **${action}**`);
       }
 
       else if (commandName === 'work') {
-        if (!facility.is_started) return interaction.reply({ content: 'ask the manager to `/start-game`! 🚀', ephemeral: true });
-        if (facility.is_paused) return interaction.reply({ content: '⏸️ facility operations are currently paused!', ephemeral: true });
+        if (!facility.is_started) return interaction.reply({ content: 'the shift hasn’t started yet. ask the manager to use `/start-game`.', flags: MessageFlags.Ephemeral });
+        if (facility.is_paused) return interaction.reply({ content: '⏸️ the shift is paused. wait for the manager to resume it.', flags: MessageFlags.Ephemeral });
 
         const agent = findAgent(user.id, guildId);
-        if (!agent) return interaction.reply({ content: 'you need to `/join` first!!', ephemeral: true });
-        if (agent.status === 'dead') return interaction.reply({ content: '💀 you are dead!!', ephemeral: true });
-        if (agent.status === 'panicked' || agent.status === 'traumatized') return interaction.reply({ content: `🧠 you are ${agent.status}! recover first!`, ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
+        if (agent.status === 'dead') return interaction.reply({ content: '💀 your agent is dead. use `/join` to revive or start again.', flags: MessageFlags.Ephemeral });
+        if (agent.status === 'panicked' || agent.status === 'traumatized') return interaction.reply({ content: `🧠 your agent is ${agent.status}. recover before taking more work.`, flags: MessageFlags.Ephemeral });
 
         const abnos = db.query(`SELECT * FROM abnormalities WHERE guild_id=? AND is_breaching=0 ORDER BY id`).all(guildId) as any[];
         const targetAbnoInput = interaction.options.getString('abnormality');
@@ -2866,24 +2867,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (targetAbnoInput && workTypeInput && levelInput) {
           const selected = abnos.find(a => a.name.toLowerCase().includes(targetAbnoInput.toLowerCase()) || a.id.toString() === targetAbnoInput);
-          if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, ephemeral: true });
+          if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, flags: MessageFlags.Ephemeral });
           return executeWork(interaction, agent, selected, workTypeInput, facility, levelInput);
         }
 
         if (targetAbnoInput && workTypeInput) {
           const selected = abnos.find(a => a.name.toLowerCase().includes(targetAbnoInput.toLowerCase()) || a.id.toString() === targetAbnoInput);
-          if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, ephemeral: true });
+          if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, flags: MessageFlags.Ephemeral });
           const displayedSelected = getDisplayAbnormality(selected, abnos);
           const preview = levelPreviewText(agent, selected, workTypeInput, facility);
           return interaction.reply({
-            content: `${getWorkType(workTypeInput).icon} **${getWorkType(workTypeInput).label}** on **${displayedSelected.name}**\n\nhow deep do you want to push it? higher levels increase payout potential but also increase the risk of a poor result.\n${preview}`,
+            content: `${getWorkType(workTypeInput).icon} **${getWorkType(workTypeInput).label}** on **${displayedSelected.name}**\n\npick a work level. higher levels can earn more PE, but lower your chance of success.\n${preview}`,
             components: [buildLevelRow(workTypeInput, selected, user.id)]
           });
         }
 
         if (targetAbnoInput) {
           const selected = abnos.find(a => a.name.toLowerCase().includes(targetAbnoInput.toLowerCase()) || a.id.toString() === targetAbnoInput);
-          if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, ephemeral: true });
+          if (!selected) return interaction.reply({ content: `❌ no abnormality matched **${targetAbnoInput}**.`, flags: MessageFlags.Ephemeral });
 
           const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
             ...(['instinct', 'insight', 'attachment', 'repression'] as WorkType[]).map(type =>
@@ -2960,21 +2961,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       else if (commandName === 'end-day') {
-        if (!facility.is_started) return interaction.reply({ content: 'the facility has not started yet!', ephemeral: true });
-        if (facility.is_paused) return interaction.reply({ content: 'you cannot progress a paused facility!', ephemeral: true });
+        if (!facility.is_started) return interaction.reply({ content: 'the shift hasn’t started yet. ask the manager to use `/start-game`.', flags: MessageFlags.Ephemeral });
+        if (facility.is_paused) return interaction.reply({ content: 'the shift is paused. ask the manager to resume it first.', flags: MessageFlags.Ephemeral });
         if (facility.dictator_mode && facility.manager_id !== user.id) {
-          return interaction.reply({ content: '👑 dictator mode is active! only the manager can end the day.', ephemeral: true });
+          return interaction.reply({ content: '👑 dictator mode is active! only the manager can end the day.', flags: MessageFlags.Ephemeral });
         }
         return endDay(interaction, facility);
       }
 
       else if (commandName === 'upgrade') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can do that.', flags: MessageFlags.Ephemeral });
         const type = interaction.options.getString('type', true) as UpgradeType;
         const levelKey = `${type}_level`;
         const current = Number(facility[levelKey] ?? 1);
         const cost = 80 + current * 55;
-        if (facility.lob_points < cost) return interaction.reply({ content: `💰 not enough LOB points. need **${cost}**, have **${facility.lob_points}**.`, ephemeral: true });
+        if (facility.lob_points < cost) return interaction.reply({ content: `💰 not enough LOB points. need **${cost}**, have **${facility.lob_points}**.`, flags: MessageFlags.Ephemeral });
 
         db.query(`UPDATE facility SET ${levelKey}=?, lob_points=lob_points-? WHERE guild_id=?`).run(current + 1, cost, guildId);
         logEvent(guildId, facility.day_count, facility.phase, 'upgrade', `${type} upgraded to level ${current + 1}.`);
@@ -2997,17 +2998,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (mode === 'channel') {
           const channelId = String(refreshed?.radio_channel_id ?? '');
           return interaction.reply({
-            content: channelId ? `📻 live facility radio: <#${channelId}>` : '📻 the facility radio has not been provisioned yet.',
-            ephemeral: true
+            content: channelId ? `📻 live facility radio: <#${channelId}>` : '📻 the radio channel isn’t set up yet.',
+            flags: MessageFlags.Ephemeral
           });
         }
 
         if (mode === 'test') {
-          if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
+          if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can do that.', flags: MessageFlags.Ephemeral });
           const message = `CONTROL: radio check from **${user.username}**. communications are nominal.`;
           logEvent(guildId, facility.day_count, facility.phase, 'radio', message);
           const sent = await sendFacilityRadio(guild, refreshed, message);
-          return interaction.reply({ content: sent ? '📻 radio test transmitted successfully.' : '⚠️ the radio transmission could not be delivered.', ephemeral: true });
+          return interaction.reply({ content: sent ? '📻 test message sent.' : '⚠️ couldn’t send the radio message. check the channel and bot permissions.', flags: MessageFlags.Ephemeral });
         }
 
         const transmissions = db.query(`
@@ -3015,7 +3016,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           WHERE guild_id=? AND type IN ('ambient_event', 'radio', 'panic', 'department_unlock')
           ORDER BY id DESC LIMIT 10
         `).all(guildId) as any[];
-        if (!transmissions.length) return interaction.reply({ content: '📻 no radio transmissions have been recorded yet.', ephemeral: true });
+        if (!transmissions.length) return interaction.reply({ content: '📻 no radio transmissions have been recorded yet.', flags: MessageFlags.Ephemeral });
 
         const body = transmissions
           .map((event: any) => `**DAY ${event.day} · ${getPhaseLabel(event.phase)}**
@@ -3023,15 +3024,15 @@ ${event.message}`)
           .join('\n\n─────────────────\n\n');
         await interaction.reply({ content: `📻 **FACILITY RADIO ARCHIVE**
 
-${body}`.slice(0, 1900), ephemeral: true });
+${body}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
       }
 
       else if (commandName === 'work-history') {
         const agent = findAgent(user.id, guildId);
-        if (!agent) return interaction.reply({ content: 'you need to `/join` first!!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
 
         const entries = db.query(`SELECT * FROM agent_work_history WHERE guild_id=? AND discord_id=? ORDER BY id DESC LIMIT 10`).all(guildId, user.id) as any[];
-        if (!entries.length) return interaction.reply({ content: '📓 your work log is empty. complete a work session to start it.', ephemeral: true });
+        if (!entries.length) return interaction.reply({ content: '📓 no work logged yet. your first completed assignment will show up here.', flags: MessageFlags.Ephemeral });
 
         const lines = entries.map(entry => {
           const qliphoth = entry.qliphoth_change > 0 ? '+1' : entry.qliphoth_change < 0 ? '-1' : '—';
@@ -3041,12 +3042,12 @@ ${body}`.slice(0, 1900), ephemeral: true });
           .setTitle(`📓 WORK LOG — AGENT ${agent.name.toUpperCase()}`)
           .setDescription(lines.join('\n\n─────────────────\n\n'))
           .setFooter({ text: 'your private record · showing the 10 most recent sessions' });
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       else if (commandName === 'relationships') {
         const agent = findAgent(user.id, guildId);
-        if (!agent) return interaction.reply({ content: 'you need to `/join` first!!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
         const relationships = db.query(`
           SELECT r.*, a.name AS agent_name
           FROM agent_relationships r
@@ -3054,7 +3055,7 @@ ${body}`.slice(0, 1900), ephemeral: true });
           WHERE r.guild_id=? AND r.from_discord_id=?
           ORDER BY r.trust DESC, a.name
         `).all(guildId, user.id) as any[];
-        if (!relationships.length) return interaction.reply({ content: '👥 no relationships recorded yet. share a shift with another agent to begin.', ephemeral: true });
+        if (!relationships.length) return interaction.reply({ content: '👥 no relationships yet. spend a shift with other agents to start building them.', flags: MessageFlags.Ephemeral });
 
         const lines = relationships.map(relationship => {
           const trust = Number(relationship.trust);
@@ -3064,8 +3065,8 @@ ${body}`.slice(0, 1900), ephemeral: true });
         const embed = new EmbedBuilder()
           .setTitle(`👥 AGENT RELATIONSHIPS — ${agent.name.toUpperCase()}`)
           .setDescription(lines.join('\n\n'))
-          .setFooter({ text: 'relationships change through shared facility experiences' });
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+          .setFooter({ text: 'working together changes how agents get along' });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       else if (commandName === 'departments') {
@@ -3082,47 +3083,47 @@ ${row.bonus}
 ${gate}${quest ? `
 ${quest}` : ''}`;
         }).join('\n\n');
-        await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🏢 department routing').setDescription(lines.slice(0, 4096))], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🏢 departments').setDescription(lines.slice(0, 4096))], flags: MessageFlags.Ephemeral });
       }
 
       else if (commandName === 'travel') {
         const dept = interaction.options.getString('department', true).toLowerCase();
         const traveler = findAgent(user.id, guildId);
-        if (!traveler) return interaction.reply({ content: 'you need to `/join` before using department routing.', ephemeral: true });
+        if (!traveler) return interaction.reply({ content: 'use `/join` to make an agent before travelling.', flags: MessageFlags.Ephemeral });
         if (['dead', 'panicked', 'traumatized'].includes(traveler.status)) {
-          return interaction.reply({ content: `🚫 you are **${traveler.status}** and cannot travel right now.`, ephemeral: true });
+          return interaction.reply({ content: `🚫 you are **${traveler.status}** and cannot travel right now.`, flags: MessageFlags.Ephemeral });
         }
         const facilityRow = db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any;
         const unlocked = evaluateDepartmentUnlocks(facilityRow);
         if (!unlocked.includes(dept)) {
-          return interaction.reply({ content: `🔒 **${dept}** is not unlocked yet.`, ephemeral: true });
+          return interaction.reply({ content: `🔒 **${dept}** is not unlocked yet.`, flags: MessageFlags.Ephemeral });
         }
 
         const travel = startAgentTravel(guildId, user.id, dept);
         if (!travel) {
-          return interaction.reply({ content: '❌ unable to travel there.', ephemeral: true });
+          return interaction.reply({ content: '❌ you can’t travel there right now. check `/departments` for open routes.', flags: MessageFlags.Ephemeral });
         }
 
         if (travel.status === 'already_there') {
-          return interaction.reply({ content: `📍 you are already in **${dept}**.`, ephemeral: true });
+          return interaction.reply({ content: `📍 you are already in **${dept}**.`, flags: MessageFlags.Ephemeral });
         }
         if (travel.status === 'already_traveling') {
-          return interaction.reply({ content: `🚪 you are already traveling to **${travel.agent.travel_destination}**.`, ephemeral: true });
+          return interaction.reply({ content: `🚪 you are already traveling to **${travel.agent.travel_destination}**.`, flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.reply({ content: `🚪 **travel started:** you left **${travel.agent.travel_origin}** for **${dept}**. arrival in **${travel.duration} phase(s)** (${DEPARTMENT_SECTORS[dept as DepartmentName] ?? 'central-command'}).`, ephemeral: true });
+        await interaction.reply({ content: `🚪 **travel started:** you left **${travel.agent.travel_origin}** for **${dept}**. arrival in **${travel.duration} phase(s)** (${DEPARTMENT_SECTORS[dept as DepartmentName] ?? 'central-command'}).`, flags: MessageFlags.Ephemeral });
       }
 
       else if (commandName === 'save') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can do that.', flags: MessageFlags.Ephemeral });
         const slot = interaction.options.getString('slot', true).trim();
-        if (!slot) return interaction.reply({ content: 'give the save a name!', ephemeral: true });
+        if (!slot) return interaction.reply({ content: 'give the save a name!', flags: MessageFlags.Ephemeral });
 
         const existing = db.query(`SELECT * FROM save_files WHERE save_name=? AND guild_id=?`).get(slot, guildId) as any | null;
         const countRow = db.query(`SELECT COUNT(*) AS count FROM save_files WHERE guild_id=?`).get(guildId) as { count?: number } | null;
         const count = Number(countRow?.count ?? 0);
         if (!existing && count >= MAX_SAVE_SLOTS) {
-          return interaction.reply({ content: `⚠️ this server has reached the save cap (**${MAX_SAVE_SLOTS}**). delete one before creating a new slot.`, ephemeral: true });
+          return interaction.reply({ content: `⚠️ this server has reached the save cap (**${MAX_SAVE_SLOTS}**). delete one before creating a new slot.`, flags: MessageFlags.Ephemeral });
         }
 
         const state = serializeFacility(guildId);
@@ -3130,26 +3131,26 @@ ${quest}` : ''}`;
           INSERT OR REPLACE INTO save_files (save_name, guild_id, state_json, day_count, energy, quota, dictator_mode)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(slot, guildId, json(state), facility.day_count, facility.energy, facility.quota, facility.dictator_mode);
-        await interaction.reply(`💾 **save complete!** facility state stored in slot **${slot}**.`);
+        await interaction.reply(`💾 **save complete!** saved to **${slot}**.`);
       }
 
       else if (commandName === 'load') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can do that.', flags: MessageFlags.Ephemeral });
         const slot = interaction.options.getString('slot', true).trim();
         const save = db.query(`SELECT * FROM save_files WHERE save_name=? AND guild_id=?`).get(slot, guildId) as any;
-        if (!save) return interaction.reply({ content: `❌ save slot **${slot}** not found!`, ephemeral: true });
+        if (!save) return interaction.reply({ content: `❌ save slot **${slot}** not found!`, flags: MessageFlags.Ephemeral });
         restoreState(guildId, JSON.parse(save.state_json));
         const loadedFacility = db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any;
         if (loadedFacility?.is_started) await ensureFacilityChannels(guild, loadedFacility);
-        await interaction.reply(`📂 **save loaded!** slot **${slot}** restored. the simulation is back on **day ${save.day_count}**.`);
+        await interaction.reply(`📂 **save loaded!** slot **${slot}** restored. back to **day ${save.day_count}**.`);
         logEvent(guildId, save.day_count, 8, 'save_load', `Save slot ${slot} loaded.`);
       }
 
       else if (commandName === 'rewind') {
-        if (facility.manager_id !== user.id) return interaction.reply({ content: 'manager only!!', ephemeral: true });
+        if (facility.manager_id !== user.id) return interaction.reply({ content: 'only the manager can do that.', flags: MessageFlags.Ephemeral });
         const checkpointRestored = restoreLatestMemoryCheckpoint(guildId);
         if (!checkpointRestored) {
-          return interaction.reply({ content: '🧠 no memory checkpoint exists for this facility yet.', ephemeral: true });
+          return interaction.reply({ content: '🧠 no memory checkpoint exists for this facility yet.', flags: MessageFlags.Ephemeral });
         }
         const refreshed = db.query(`SELECT * FROM facility WHERE guild_id=?`).get(guildId) as any;
         if (refreshed?.is_started) await ensureFacilityChannels(guild, refreshed);
@@ -3189,7 +3190,7 @@ ${quest}` : ''}`;
       );
 
       const agent = findAgent(interaction.user.id, guildId);
-      if (!agent) return interaction.update({ content: 'you need to `/join` first!', components: [] });
+      if (!agent) return interaction.update({ content: 'use `/join` to make an agent first.', components: [] });
 
       const knowledge = getAgentKnowledge(guildId, interaction.user.id, Number(abno.id));
       const preview = (['instinct', 'insight', 'attachment', 'repression'] as WorkType[])
@@ -3199,7 +3200,7 @@ ${quest}` : ''}`;
         })
         .join('\n');
 
-      await interaction.update({ content: `🧪 **${abno.name}**\n\npersonal observations:\n${preview}\n\nchoose your work type!`, components: [row] });
+      await interaction.update({ content: `🧪 **${abno.name}**\n\npersonal observations:\n${preview}\n\nwhat kind of work?`, components: [row] });
     }
 
     // ==========================================
@@ -3215,13 +3216,13 @@ ${quest}` : ''}`;
         const agent = findAgent(interaction.user.id, guildId);
         const abnormalityId = abnoId ?? '';
         const abno = abnormalityId ? db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnormalityId, guildId) as any : null;
-        if (!agent || !abno) return interaction.update({ content: '❌ unable to resolve the work assignment.', components: [] });
+        if (!agent || !abno) return interaction.update({ content: '❌ couldn’t find that agent or abnormality. open `/work` again.', components: [] });
         if (facility.is_paused) return interaction.update({ content: '⏸️ facility operations are paused.', components: [] });
 
         const bInfo = BEHAVIOUR_INFO[getBehaviour(abno)];
         const preview = levelPreviewText(agent, abno, workType, facility);
         return interaction.update({
-          content: `${getGuildEmojiString(interaction.guild, getWorkType(workType).icon, getWorkType(workType).label)} **${getWorkType(workType).label}** on **${abno.name}** ${bInfo.icon}\n\nhow deep do you want to push it? higher levels pay more PE but hit your odds harder.\n${preview}`,
+          content: `${getGuildEmojiString(interaction.guild, getWorkType(workType).icon, getWorkType(workType).label)} **${getWorkType(workType).label}** on **${abno.name}** ${bInfo.icon}\n\npick a work level. higher levels can earn more PE, but lower your chance of success.\n${preview}`,
           components: [buildLevelRow(workType, abno, workPrompt.ownerId)]
         });
       }
@@ -3233,7 +3234,7 @@ ${quest}` : ''}`;
         const agent = findAgent(interaction.user.id, guildId);
         const abnormalityId = abnoId ?? '';
         const abno = abnormalityId ? db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnormalityId, guildId) as any : null;
-        if (!agent || !abno) return interaction.update({ content: '❌ unable to resolve the work assignment.', components: [] });
+        if (!agent || !abno) return interaction.update({ content: '❌ couldn’t find that agent or abnormality. open `/work` again.', components: [] });
         if (facility.is_paused) return interaction.update({ content: '⏸️ facility operations are paused.', components: [] });
         return executeWork(interaction, agent, abno, workType, facility, level);
       }
@@ -3246,7 +3247,7 @@ ${quest}` : ''}`;
         const abno = db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnoId, guildId) as any;
 
         if (!agent || !abno) {
-          return interaction.reply({ content: '❌ your information record could not be resolved.', ephemeral: true });
+          return interaction.reply({ content: '❌ couldn’t find that observation record. try `/info` again.', flags: MessageFlags.Ephemeral });
         }
 
         const built = buildInformationEmbed(interaction.guild, agent, abno, section);
@@ -3269,18 +3270,18 @@ ${quest}` : ''}`;
         const abnoId = interaction.customId.replace('suppress_confirm_', '');
         const agent = findAgent(interaction.user.id, guildId);
         const abno = abnoId ? db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnoId, guildId) as any : null;
-        if (!agent) return interaction.reply({ content: 'you need to `/join` first!', ephemeral: true });
-        if (!abno) return interaction.reply({ content: 'that abnormality does not exist!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
+        if (!abno) return interaction.reply({ content: 'that abnormality is no longer here.', flags: MessageFlags.Ephemeral });
         if (agent.status === 'dead' || agent.status === 'panicked' || agent.status === 'traumatized') {
-          return interaction.reply({ content: `you are ${agent.status} and cannot fight!`, ephemeral: true });
+          return interaction.reply({ content: `your agent is ${agent.status} and can’t fight right now.`, flags: MessageFlags.Ephemeral });
         }
-        if (!abno.is_breaching) return interaction.reply({ content: 'that abnormality is not currently breaching.', ephemeral: true });
+        if (!abno.is_breaching) return interaction.reply({ content: 'that abnormality is not currently breaching.', flags: MessageFlags.Ephemeral });
 
         const cooldownKey = `${guildId}:${agent.discord_id}:${abno.id}`;
         const now = Date.now();
         const cooldownUntil = SUPPRESSION_COOLDOWNS.get(cooldownKey) ?? 0;
         if (now < cooldownUntil) {
-          return interaction.reply({ content: '⏳ the breach is still resolving. wait a moment before attacking again.', ephemeral: true });
+          return interaction.reply({ content: '⏳ the breach is still resolving. wait a moment before attacking again.', flags: MessageFlags.Ephemeral });
         }
         SUPPRESSION_COOLDOWNS.set(cooldownKey, now + 1200);
 
@@ -3391,17 +3392,17 @@ ${quest}` : ''}`;
         const abnoId = interaction.customId.split('_')[1] ?? '';
         const agent = findAgent(interaction.user.id, guildId);
         const abno = abnoId ? db.query(`SELECT * FROM abnormalities WHERE id=? AND guild_id=?`).get(abnoId, guildId) as any : null;
-        if (!agent) return interaction.reply({ content: 'you need to `/join` first!', ephemeral: true });
-        if (!abno) return interaction.reply({ content: 'that abnormality does not exist!', ephemeral: true });
+        if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
+        if (!abno) return interaction.reply({ content: 'that abnormality is no longer here.', flags: MessageFlags.Ephemeral });
         if (agent.status === 'dead' || agent.status === 'panicked' || agent.status === 'traumatized') {
-          return interaction.reply({ content: `you are ${agent.status} and cannot fight!`, ephemeral: true });
+          return interaction.reply({ content: `your agent is ${agent.status} and can’t fight right now.`, flags: MessageFlags.Ephemeral });
         }
-        if (!abno.is_breaching) return interaction.reply({ content: 'that abnormality is not currently breaching.', ephemeral: true });
+        if (!abno.is_breaching) return interaction.reply({ content: 'that abnormality is not currently breaching.', flags: MessageFlags.Ephemeral });
         if (isCriticallyLow(agent)) {
           return interaction.reply({
             content: `⚠️ **${agent.name} is critically low** — **HP ${agent.hp}/${agent.max_hp}** and **SP ${agent.sp}/${agent.max_sp}**. retreat or continue anyway?`,
             components: [buildCombatWarningRow(abno.id)],
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
 
@@ -3409,7 +3410,7 @@ ${quest}` : ''}`;
         const now = Date.now();
         const cooldownUntil = SUPPRESSION_COOLDOWNS.get(cooldownKey) ?? 0;
         if (now < cooldownUntil) {
-          return interaction.reply({ content: '⏳ the breach is still resolving. wait a moment before attacking again.', ephemeral: true });
+          return interaction.reply({ content: '⏳ the breach is still resolving. wait a moment before attacking again.', flags: MessageFlags.Ephemeral });
         }
         SUPPRESSION_COOLDOWNS.set(cooldownKey, now + 1200);
 
@@ -3517,11 +3518,11 @@ ${quest}` : ''}`;
   } catch (err) {
     console.error('Unhandled interaction error:', err);
     if (interaction.isRepliable()) {
-      const errorMsg = '💥 an error occurred while executing that operation!';
+      const errorMsg = '💥 something went wrong. check whether the action went through before trying again.';
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: errorMsg, ephemeral: true }).catch(() => {});
+        await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
       } else {
-        await interaction.reply({ content: errorMsg, ephemeral: true }).catch(() => {});
+        await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     }
   }

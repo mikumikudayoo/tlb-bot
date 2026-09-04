@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { MessageFlags } from 'discord.js';
 
 process.env.BOT_TEST_MODE = '1';
 process.env.NODE_ENV = 'test';
@@ -328,6 +329,6 @@ describe('guide mechanics: departments, cores, ordeals and recruitment', () => {
     interaction.commandName = 'research';
     await handleProgressionCommand(interaction, engine);
     expect(replies[1].content).toContain('manager');
-    expect(replies.every(r => r.ephemeral)).toBe(true);
+    expect(replies.every(r => r.flags === MessageFlags.Ephemeral && !('ephemeral' in r))).toBe(true);
   });
 });

@@ -5,7 +5,7 @@
  * This keeps the Discord layer separated from core game logic and startup.
  */
 
-import { Client, Events } from 'discord.js';
+import { Client, Events, MessageFlags } from 'discord.js';
 import { createInteractionHandlers } from './interactionHandlers';
 
 /**
@@ -31,11 +31,11 @@ export async function routeDiscordInteraction(interaction: any, gl: any): Promis
   } catch (err) {
     console.error('Unhandled interaction error:', err);
     if (interaction.isRepliable()) {
-      const errorMsg = '💥 an error occurred while executing that operation!';
+      const errorMsg = '💥 something went wrong. check whether the action went through before trying again.';
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: errorMsg, ephemeral: true }).catch(() => {});
+        await interaction.followUp({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
       } else {
-        await interaction.reply({ content: errorMsg, ephemeral: true }).catch(() => {});
+        await interaction.reply({ content: errorMsg, flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     }
   }
@@ -46,8 +46,8 @@ export function setupDiscordHandlers(client: Client, gameLogic: any): void {
   const gl = gameLogic;
 
   client.once(Events.ClientReady, async (readyClient) => {
-    console.log(`wonderhooi!! ✨ logged in as ${readyClient.user.tag}!`);
-    console.log('facility simulation v2 is online!! 🚀💖');
+    console.log(`✨ logged in as ${readyClient.user.tag}`);
+    console.log('facility is online. ready for the next shift 🎪');
 
     // Repair/recreate persisted facility channels after restarts or manual deletion.
     for (const guild of readyClient.guilds.cache.values()) {
