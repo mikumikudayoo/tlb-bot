@@ -525,7 +525,8 @@ describe('TLB facility torture test', () => {
       });
       expect(agent.level).toBe(2);
       expect(agent.promotions).toBe(1);
-      expect(agent.fortitude).toBe(3);
+      expect(agent.fortitude).toBe(2);
+      expect(agent.experience).toBe(__test.experienceToNext(1));
     });
   });
 
@@ -1043,7 +1044,7 @@ describe('TLB facility torture test', () => {
 
     it('triggers Dawn at the first meltdown, not an energy threshold', () => {
       const guildId = 'g_ordeal';
-      const facility = seedFacility(guildId, { energy: 150 });
+      const facility = seedFacility(guildId, { energy: 150, day_count: 6 });
       expect(__test.maybeTriggerOrdeal(guildId, facility)).toBe(false);
       db.query('UPDATE facility SET progression=? WHERE guild_id=?').run(JSON.stringify({ meltdown: 1 }), guildId);
       expect(__test.maybeTriggerOrdeal(guildId, facility)).toBe(true);
@@ -1348,7 +1349,7 @@ describe('TLB facility torture test', () => {
       const guildId = 'g_abno_testing';
       const added = __test.runAbnormalityTestAction(guildId, 'add', 'T-01-31');
       expect(added.ok).toBe(true);
-      expect(added.abnormality).toMatchObject({ name: 'T-01-31', script_id: 'T-01-31', is_breaching: 0 });
+      expect(added.abnormality).toMatchObject({ name: 'The Silent Orchestra', risk: 'ALEPH', script_id: 'T-01-31', is_breaching: 0 });
 
       const registryOnly = __test.runAbnormalityTestAction(guildId, 'add', 'DO-NOT-TOUCH');
       expect(registryOnly.ok).toBe(true);

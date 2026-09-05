@@ -53,10 +53,11 @@ describe('player guide /help', () => {
   });
 
   it('keeps the existing topic values so help still works without redeploying', () => {
-    expect(HELP_TOPICS.map(topic => topic.value)).toEqual([
+    expect(HELP_TOPICS.map(topic => topic.value)).toEqual(expect.arrayContaining([
       'getting-started', 'abnormalities-and-work', 'stats-lob-and-cards',
       'e-g-o-equipment-and-gifts', 'stims-and-research', 'meltdowns-and-ordeals',
       'departments-and-core-suppression', 'recruitment-and-manager-tests', 'panic-death-and-saves',
-    ]);
+    ]));
+    expect(HELP_TOPICS.some(topic => topic.value === 'core-boss-encounters')).toBe(true);
   });
 });

@@ -36,7 +36,7 @@ describe('guide mechanics: stats and personal LOB', () => {
       const abno = { ...f.source, damage_type: 'RED', damage_amt: 2 };
       await engine.executeWork({ guildId: f.guild, deferred: true, editReply: async (value: any) => { edits.push(value); } }, a, abno, 'instinct', f.facility());
       const damage = engine.getPEBoxTotal(abno);
-      expect(f.agent().hp).toBe(100 - damage);
+      expect(f.agent().hp).toBe(40 - damage);
       expect(edits.at(-1).content).toContain(`suffered **${damage} RED damage**`);
       expect(f.agent().status).toBe('idle');
     } finally { Math.random = originalRandom; }
@@ -46,15 +46,15 @@ describe('guide mechanics: stats and personal LOB', () => {
     const f = fixture();
     const a = f.agent();
     for (const [work, stat] of [['instinct', 'fortitude'], ['insight', 'prudence'], ['attachment', 'temperance'], ['repression', 'justice']] as const) {
-      expect(P.awardWorkProgress(a, f.source, work, 3, f.facility())).toBe(1);
+      expect(P.awardWorkProgress(a, f.source, work, 12, f.facility())).toBe(1);
       expect(P.agentProgress(a).points[stat]).toBe(41);
     }
     engine.updateAgent(a);
     expect(P.agentProgress(f.agent()).points).toEqual({ fortitude: 41, prudence: 41, temperance: 41, justice: 41 });
-    expect(P.agentProgress(f.agent()).pe[String(f.source.id)]).toBe(12);
+    expect(P.agentProgress(f.agent()).pe[String(f.source.id)]).toBe(48);
     a.status = 'dead';
     expect(P.awardWorkProgress(a, f.source, 'instinct', 10, f.facility())).toBe(0);
-    expect(P.agentProgress(a).pe[String(f.source.id)]).toBe(12);
+    expect(P.agentProgress(a).pe[String(f.source.id)]).toBe(48);
   });
 
   it('enforces base 100, researched 150 and card-extended 175 caps', () => {
@@ -65,6 +65,7 @@ describe('guide mechanics: stats and personal LOB', () => {
     f.setFacility({ research: ['extended_stats'] });
     expect(P.growStat(a, 'fortitude', 500, f.facility()).current).toBe(150);
     a.level = 5;
+    a.progression = JSON.stringify({ ...P.agentProgress(a), cards: ['break_your_limits'] });
     P.awardWorkProgress(a, f.source, 'insight', 1, f.facility());
     expect(P.growStat(a, 'fortitude', 500, f.facility()).current).toBe(175);
     expect(P.agentProgress(a).cards).toEqual(['break_your_limits']);
@@ -75,8 +76,9 @@ describe('guide mechanics: stats and personal LOB', () => {
   it('uses personal LOB and rejects out-of-intermission, invalid and unaffordable training atomically', () => {
     const f = fixture();
     const initialFacilityLob = f.facility().lob_points;
+    f.setProgress({ lob: 400 });
     expect(P.trainWithLob(f.guild, 'player', 'justice').gain).toBe(5);
-    expect(P.agentProgress(f.agent()).lob).toBe(5);
+    expect(P.agentProgress(f.agent()).lob).toBe(200);
     expect(f.facility().lob_points).toBe(initialFacilityLob);
     db.query('UPDATE facility SET phase=10 WHERE guild_id=?').run(f.guild);
     expect(() => P.trainWithLob(f.guild, 'player', 'justice')).toThrow('intermission');
@@ -178,7 +180,7 @@ describe('guide mechanics: damage, stims and research', () => {
     expect(() => P.useStim(a, f.facility(), 'pale')).toThrow('command core');
     f.setFacility({ cores: ['command'] });
     expect(P.useStim(a, f.facility(), 'pale')).toBe(0);
-    expect(a.shield_pale).toBe(25);
+    expect(a.shield_pale).toBe(50);
     expect(() => P.useStim(a, f.facility(), 'pale')).toThrow('no charges');
   });
 
@@ -189,7 +191,7 @@ describe('guide mechanics: damage, stims and research', () => {
     expect(JSON.parse(a.stim_charges).health).toBe(1);
     Object.assign(a, { sp: 0, status: 'panicked', panic_turns: 2, panic_behavior: 'hostile' });
     P.useStim(a, f.facility(), 'sanity');
-    expect(a).toMatchObject({ sp: 25, status: 'recovering', panic_turns: 0, panic_behavior: '' });
+    expect(a).toMatchObject({ sp: 20, status: 'recovering', panic_turns: 0, panic_behavior: '' });
   });
 });
 
@@ -218,11 +220,12 @@ describe('guide mechanics: departments, cores, ordeals and recruitment', () => {
 
   it('rejects ending the day while an ordeal is still active', async () => {
     const f = fixture(); f.setFacility({ meltdown: 1 });
+    db.query('UPDATE facility SET day_count=6 WHERE guild_id=?').run(f.guild);
     P.startOrdeal(f.facility());
     const replies: any[] = [];
     await engine.endDay({ guildId: f.guild, reply: async (v: any) => { replies.push(v); } }, f.facility());
     expect(replies[0].content).toContain('ordeal');
-    expect(f.facility().day_count).toBe(1);
+    expect(f.facility().day_count).toBe(6);
   });
 
   it('migrates an old active placeholder ordeal into a playable encounter only once', () => {
@@ -235,15 +238,22 @@ describe('guide mechanics: departments, cores, ordeals and recruitment', () => {
     expect(P.facilityProgress(f.facility()).ordeal.hp).toBe(90);
   });
 
-  it('requires a completed quest, counts only matching good works, then grants meltdown immunity', () => {
+  it('requires a completed quest, day gate, meltdown goal and quota for new cores', () => {
     const f = fixture();
     expect(() => P.startCore(f.guild, 'player', 'control')).toThrow('manager');
     expect(() => P.startCore(f.guild, 'manager', 'control')).toThrow('quest');
     recordDepartmentProgress(f.guild, 'control', 40);
+    expect(() => P.startCore(f.guild, 'manager', 'control')).toThrow('day 20');
+    db.query('UPDATE facility SET day_count=21 WHERE guild_id=?').run(f.guild);
     P.startCore(f.guild, 'manager', 'control');
     expect(P.advanceCore(f.facility(), 'welfare', true)).toBe(false);
     expect(P.advanceCore(f.facility(), 'control', false)).toBe(false);
     for (let i = 0; i < 5; i++) P.advanceCore(f.facility(), 'control', true);
+    expect(P.facilityProgress(f.facility()).cores).toEqual([]);
+    f.setFacility({ meltdown: 6 });
+    expect(P.advanceCore(f.facility(), 'control', true)).toBe(false);
+    db.query('UPDATE facility SET energy=quota WHERE guild_id=?').run(f.guild);
+    expect(P.advanceCore(f.facility(), 'control', true)).toBe(true);
     expect(P.facilityProgress(f.facility()).cores).toEqual(['control']);
     expect(engine.triggerMeltdownAlarm(f.guild, f.facility())).toBe(false);
     expect(f.source.is_breaching).toBe(0);
@@ -269,10 +279,11 @@ describe('guide mechanics: departments, cores, ordeals and recruitment', () => {
     expect(f.facility().meltdown_alarm).toBe(0);
   });
 
-  it('makes all four ordeal stages reachable before the actual clock reaches 22:00', () => {
+  it('makes all four ordeal stages reachable with late-day overtime', () => {
     const f = fixture();
+    db.query('UPDATE facility SET day_count=26 WHERE guild_id=?').run(f.guild);
     const stages: string[] = [];
-    for (let phase = 8; phase < 22; phase = engine.nextPhase(phase)) {
+    for (let work = 0; work < 14; work++) {
       engine.triggerMeltdownAlarm(f.guild, f.facility());
       engine.resolveMeltdownTimers(f.guild, f.facility());
       if (engine.maybeTriggerOrdeal(f.guild, f.facility())) {
@@ -287,6 +298,7 @@ describe('guide mechanics: departments, cores, ordeals and recruitment', () => {
 
   it('progresses Dawn → Noon → Dusk → Midnight once each and uses only the guide color pools', () => {
     const f = fixture();
+    db.query('UPDATE facility SET day_count=26 WHERE guild_id=?').run(f.guild);
     for (const stage of P.ORDEAL_STAGES) {
       f.setFacility({ meltdown: stage.meltdown - 1 });
       expect(P.startOrdeal(f.facility(), () => 0)).toBe(false);
@@ -304,6 +316,7 @@ describe('guide mechanics: departments, cores, ordeals and recruitment', () => {
 
   it('refills only researched stims and awards personal LOB at a quota-complete day', () => {
     const f = fixture(); f.setFacility({ research: ['welfare_stims'], meltdown: 8, ordealIndex: 4 });
+    db.query('UPDATE facility SET day_count=3 WHERE guild_id=?').run(f.guild);
     P.resetProgressionDay(f.facility(), true);
     expect(P.agentProgress(f.agent()).lob).toBe(20);
     expect(JSON.parse(f.agent().stim_charges)).toEqual({ health: 2, sanity: 2, red: 0, white: 0, black: 0, pale: 0 });
@@ -323,6 +336,7 @@ describe('guide mechanics: departments, cores, ordeals and recruitment', () => {
 
   it('routes player /lob through the real command handler and rejects non-manager research', async () => {
     const f = fixture(); const replies: any[] = [];
+    f.setProgress({ lob: 200 });
     const interaction = { guildId: f.guild, user: { id: 'player' }, commandName: 'lob', options: { getString: () => 'justice' }, reply: async (value: any) => { replies.push(value); } };
     await handleProgressionCommand(interaction, { ...engine, recordDepartmentProgress });
     expect(replies[0].content).toContain('justice +5');

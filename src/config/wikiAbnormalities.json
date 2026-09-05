@@ -1,0 +1,3641 @@
+{
+  "source": "https://tuantuslobbranches.miraheze.org/wiki/Main_Page",
+  "exportDate": "2026-09-05",
+  "revisions": [
+    {
+      "title": "Module:AbnoData",
+      "revision": "7055"
+    },
+    {
+      "title": "Module:AbnoWork",
+      "revision": "7092"
+    }
+  ],
+  "abnormalities": [
+    {
+      "key": "pear",
+      "name": "Pear",
+      "code": "D-04-71",
+      "risk": "ZAYIN",
+      "maxEnergy": 3,
+      "damageType": "WHITE",
+      "damage": [
+        9,
+        9
+      ],
+      "qliphoth": null,
+      "good": [
+        1,
+        3
+      ],
+      "bad": [
+        0,
+        0
+      ],
+      "preferences": {
+        "instinct": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "insight": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "repression": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ]
+      }
+    },
+    {
+      "key": "dummy",
+      "name": "Dummy",
+      "code": "O-01-21",
+      "risk": "ZAYIN",
+      "maxEnergy": 10,
+      "damageType": "WHITE",
+      "damage": [
+        1,
+        2
+      ],
+      "qliphoth": null,
+      "good": [
+        8,
+        10
+      ],
+      "bad": [
+        0,
+        3
+      ],
+      "preferences": {
+        "instinct": [
+          80,
+          70,
+          60,
+          55,
+          50
+        ],
+        "insight": [
+          80,
+          70,
+          60,
+          55,
+          50
+        ],
+        "attachment": [
+          30,
+          30,
+          30,
+          30,
+          30
+        ],
+        "repression": [
+          30,
+          30,
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "key": "retrobrick",
+      "name": "Retro Brick",
+      "code": "O-03-01",
+      "risk": "ZAYIN",
+      "maxEnergy": 10,
+      "damageType": "WHITE",
+      "damage": [
+        1,
+        2
+      ],
+      "qliphoth": null,
+      "good": [
+        8,
+        10
+      ],
+      "bad": [
+        0,
+        3
+      ],
+      "preferences": {
+        "instinct": [
+          20,
+          20,
+          30,
+          30,
+          30
+        ],
+        "insight": [
+          50,
+          50,
+          60,
+          60,
+          60
+        ],
+        "attachment": [
+          60,
+          60,
+          70,
+          70,
+          70
+        ],
+        "repression": [
+          20,
+          20,
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "key": "wellcheers",
+      "name": "Opened Can of WellCheers",
+      "code": "F-05-52",
+      "risk": "ZAYIN",
+      "maxEnergy": 10,
+      "damageType": "RED",
+      "damage": [
+        1,
+        2
+      ],
+      "qliphoth": null,
+      "good": [
+        8,
+        10
+      ],
+      "bad": [
+        0,
+        4
+      ],
+      "preferences": {
+        "instinct": [
+          70,
+          70,
+          60,
+          60,
+          60
+        ],
+        "insight": [
+          70,
+          70,
+          60,
+          60,
+          60
+        ],
+        "attachment": [
+          50,
+          50,
+          40,
+          40,
+          40
+        ],
+        "repression": [
+          50,
+          50,
+          40,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "key": "bottleoftears",
+      "name": "Bottle of Tears",
+      "code": "T-04-21",
+      "risk": "ZAYIN",
+      "maxEnergy": 8,
+      "damageType": "WHITE",
+      "damage": [
+        2,
+        3
+      ],
+      "qliphoth": null,
+      "good": [
+        7,
+        8
+      ],
+      "bad": [
+        0,
+        3
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ],
+        "insight": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ],
+        "attachment": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ],
+        "repression": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "key": "fairyfestival",
+      "name": "Fairy Festival",
+      "code": "F-04-83",
+      "risk": "ZAYIN",
+      "maxEnergy": 10,
+      "damageType": "RED",
+      "damage": [
+        1,
+        2
+      ],
+      "qliphoth": null,
+      "good": [
+        6,
+        10
+      ],
+      "bad": [
+        0,
+        2
+      ],
+      "preferences": {
+        "instinct": [
+          70,
+          70,
+          70,
+          70,
+          70
+        ],
+        "insight": [
+          50,
+          40,
+          30,
+          30,
+          30
+        ],
+        "attachment": [
+          70,
+          60,
+          50,
+          50,
+          50
+        ],
+        "repression": [
+          50,
+          40,
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "key": "bald",
+      "name": "You're Bald",
+      "code": "Bald-Is-Awesome",
+      "risk": "ZAYIN",
+      "maxEnergy": 6,
+      "damageType": "BLACK",
+      "damage": [
+        1,
+        2
+      ],
+      "qliphoth": null,
+      "good": [
+        4,
+        6
+      ],
+      "bad": [
+        0,
+        1
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "insight": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "horse",
+      "name": "Haru Urara",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {
+        "instinct": [
+          50,
+          50,
+          50,
+          45,
+          45
+        ],
+        "insight": [
+          40,
+          35,
+          35,
+          35,
+          35
+        ],
+        "attachment": [
+          80,
+          70,
+          60,
+          50,
+          30
+        ],
+        "repression": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ]
+      }
+    },
+    {
+      "key": "subject1",
+      "name": "Subject_1",
+      "code": "F-01-57",
+      "risk": "ZAYIN",
+      "maxEnergy": 10,
+      "damageType": "WHITE",
+      "damage": [
+        1,
+        2
+      ],
+      "qliphoth": null,
+      "good": [
+        6,
+        10
+      ],
+      "bad": [
+        0,
+        1
+      ],
+      "preferences": {
+        "instinct": [
+          25,
+          25,
+          25,
+          25,
+          25
+        ],
+        "insight": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          80,
+          80,
+          80,
+          80,
+          80
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "mirror",
+      "name": "Mirror of Adjustment",
+      "code": "O-09-81",
+      "risk": "ZAYIN",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "donttouchme",
+      "name": "Don't Touch Me",
+      "code": "O-05-47",
+      "risk": "ZAYIN",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "youmustbehappy",
+      "name": "You Must Be Happy",
+      "code": "T-09-94",
+      "risk": "ZAYIN",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "oldlady",
+      "name": "Old Lady",
+      "code": "O-01-12",
+      "risk": "TETH",
+      "maxEnergy": 14,
+      "damageType": "WHITE",
+      "damage": [
+        1,
+        3
+      ],
+      "qliphoth": 4,
+      "good": [
+        11,
+        14
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {
+        "instinct": [
+          45,
+          45,
+          40,
+          40,
+          40
+        ],
+        "insight": [
+          45,
+          45,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          65,
+          65,
+          60,
+          60,
+          60
+        ],
+        "repression": [
+          30,
+          30,
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "key": "stan",
+      "name": "Stan",
+      "code": "R-02-52",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "WHITE",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": 2,
+      "good": [
+        7,
+        12
+      ],
+      "bad": [
+        0,
+        3
+      ],
+      "preferences": {
+        "instinct": [
+          50,
+          50,
+          40,
+          30,
+          30
+        ],
+        "insight": [
+          50,
+          50,
+          60,
+          70,
+          70
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          30,
+          30,
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "key": "golbo",
+      "name": "Golbo",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {
+        "instinct": [
+          5,
+          15,
+          20,
+          25,
+          25
+        ],
+        "insight": [
+          35,
+          45,
+          50,
+          60,
+          70
+        ],
+        "attachment": [
+          45,
+          55,
+          65,
+          70,
+          80
+        ],
+        "repression": [
+          5,
+          15,
+          20,
+          25,
+          25
+        ]
+      }
+    },
+    {
+      "key": "bloodbath",
+      "name": "Bloodbath",
+      "code": "T-05-51",
+      "risk": "TETH",
+      "maxEnergy": 14,
+      "damageType": "WHITE",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": null,
+      "good": [
+        10,
+        14
+      ],
+      "bad": [
+        0,
+        4
+      ],
+      "preferences": {
+        "instinct": [
+          55,
+          55,
+          50,
+          50,
+          50
+        ],
+        "insight": [
+          45,
+          45,
+          40,
+          40,
+          40
+        ],
+        "attachment": [
+          60,
+          60,
+          60,
+          60,
+          60
+        ],
+        "repression": [
+          30,
+          20,
+          10,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "birch",
+      "name": "Birch Tree",
+      "code": "O-04-34",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "WHITE",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": null,
+      "good": [
+        10,
+        12
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {
+        "instinct": [
+          55,
+          55,
+          55,
+          55,
+          55
+        ],
+        "insight": [
+          30,
+          30,
+          65,
+          75,
+          85
+        ],
+        "attachment": [
+          55,
+          55,
+          65,
+          70,
+          70
+        ],
+        "repression": [
+          5,
+          5,
+          5,
+          5,
+          5
+        ]
+      }
+    },
+    {
+      "key": "fragment",
+      "name": "Fragment of the Universe",
+      "code": "O-03-60",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "BLACK",
+      "damage": [
+        1,
+        3
+      ],
+      "qliphoth": 2,
+      "good": [
+        8,
+        12
+      ],
+      "bad": [
+        0,
+        3
+      ],
+      "preferences": {
+        "instinct": [
+          30,
+          30,
+          20,
+          20,
+          20
+        ],
+        "insight": [
+          40,
+          40,
+          30,
+          30,
+          30
+        ],
+        "attachment": [
+          60,
+          60,
+          50,
+          50,
+          50
+        ],
+        "repression": [
+          50,
+          50,
+          40,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "key": "tango",
+      "name": "TangoMangles",
+      "code": "R-06-78",
+      "risk": "TETH",
+      "maxEnergy": 10,
+      "damageType": "RED",
+      "damage": [
+        1,
+        3
+      ],
+      "qliphoth": null,
+      "good": [
+        9,
+        12
+      ],
+      "bad": [
+        0,
+        4
+      ],
+      "preferences": {
+        "instinct": [
+          45,
+          55,
+          65,
+          75,
+          85
+        ],
+        "insight": [
+          30,
+          30,
+          45,
+          45,
+          45
+        ],
+        "attachment": [
+          15,
+          15,
+          15,
+          15,
+          15
+        ],
+        "repression": [
+          45,
+          55,
+          65,
+          75,
+          85
+        ]
+      }
+    },
+    {
+      "key": "maxwell",
+      "name": "Maxwell",
+      "code": "O-02-39",
+      "risk": "TETH",
+      "maxEnergy": 8,
+      "damageType": "PALE",
+      "damage": [
+        5,
+        10
+      ],
+      "qliphoth": null,
+      "good": [
+        6,
+        8
+      ],
+      "bad": [
+        0,
+        3
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "insight": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "spiderbud",
+      "name": "Spider Bud",
+      "code": "T-02-43",
+      "risk": "TETH",
+      "maxEnergy": 14,
+      "damageType": "RED",
+      "damage": [
+        2,
+        3
+      ],
+      "qliphoth": null,
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          60,
+          60,
+          65,
+          65,
+          65
+        ],
+        "insight": [
+          -50,
+          -50,
+          -50,
+          -50,
+          -50
+        ],
+        "attachment": [
+          50,
+          50,
+          55,
+          55,
+          55
+        ],
+        "repression": [
+          40,
+          40,
+          45,
+          45,
+          45
+        ]
+      }
+    },
+    {
+      "key": "mhz",
+      "name": "1.76 MHz",
+      "code": "T-06-27",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "WHITE",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": 4,
+      "good": [
+        10,
+        12
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          40,
+          35,
+          35,
+          30
+        ],
+        "insight": [
+          40,
+          30,
+          20,
+          20,
+          20
+        ],
+        "attachment": [
+          20,
+          10,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          55,
+          55,
+          60,
+          60,
+          60
+        ]
+      }
+    },
+    {
+      "key": "forsaken",
+      "name": "Forsaken Murderer",
+      "code": "T-01-54",
+      "risk": "TETH",
+      "maxEnergy": 10,
+      "damageType": "RED",
+      "damage": [
+        2,
+        3
+      ],
+      "qliphoth": 1,
+      "good": [
+        11,
+        14
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          60,
+          60,
+          50,
+          50,
+          50
+        ],
+        "insight": [
+          40,
+          40,
+          30,
+          30,
+          30
+        ],
+        "attachment": [
+          50,
+          50,
+          40,
+          40,
+          40
+        ],
+        "repression": [
+          30,
+          20,
+          0,
+          -80,
+          -80
+        ]
+      }
+    },
+    {
+      "key": "punishingbird",
+      "name": "Punishing Bird",
+      "code": "O-02-56",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "RED",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": 4,
+      "good": [
+        9,
+        12
+      ],
+      "bad": [
+        0,
+        4
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          40,
+          40,
+          45,
+          45
+        ],
+        "insight": [
+          60,
+          60,
+          60,
+          60,
+          60
+        ],
+        "attachment": [
+          55,
+          55,
+          50,
+          50,
+          50
+        ],
+        "repression": [
+          30,
+          20,
+          10,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "cabini",
+      "name": "Cabini",
+      "code": "J-01-2X",
+      "risk": "TETH",
+      "maxEnergy": 10,
+      "damageType": "RED",
+      "damage": [
+        3,
+        4
+      ],
+      "qliphoth": null,
+      "good": [
+        5,
+        10
+      ],
+      "bad": [
+        0,
+        1
+      ],
+      "preferences": {
+        "instinct": [
+          10,
+          20,
+          25,
+          20,
+          30
+        ],
+        "insight": [
+          30,
+          40,
+          60,
+          65,
+          75
+        ],
+        "attachment": [
+          55,
+          55,
+          70,
+          75,
+          95
+        ],
+        "repression": [
+          15,
+          15,
+          20,
+          25,
+          35
+        ]
+      }
+    },
+    {
+      "key": "dvd",
+      "name": "DvD Man",
+      "code": "T-01-51",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "BLACK",
+      "damage": [
+        2,
+        3
+      ],
+      "qliphoth": 2,
+      "good": [
+        8,
+        12
+      ],
+      "bad": [
+        0,
+        3
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          60,
+          70,
+          75,
+          80
+        ],
+        "insight": [
+          30,
+          25,
+          20,
+          15,
+          10
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          40,
+          60,
+          70,
+          75,
+          80
+        ]
+      }
+    },
+    {
+      "key": "streetlight",
+      "name": "Under The Streetlight",
+      "code": "T-04-382",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "BLACK",
+      "damage": [
+        1,
+        3
+      ],
+      "qliphoth": 2,
+      "good": [
+        8,
+        12
+      ],
+      "bad": [
+        0,
+        4
+      ],
+      "preferences": {
+        "instinct": [
+          15,
+          30,
+          45,
+          50,
+          50
+        ],
+        "insight": [
+          50,
+          60,
+          65,
+          65,
+          70
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          40,
+          40,
+          45,
+          50,
+          60
+        ]
+      }
+    },
+    {
+      "key": "giggler",
+      "name": "Giggler",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {
+        "instinct": [
+          20,
+          30,
+          50,
+          65,
+          75
+        ],
+        "insight": [
+          20,
+          30,
+          50,
+          65,
+          75
+        ],
+        "attachment": [
+          50,
+          60,
+          70,
+          80,
+          90
+        ],
+        "repression": [
+          5,
+          10,
+          15,
+          20,
+          50
+        ]
+      }
+    },
+    {
+      "key": "blissful",
+      "name": "Blissful Ignorance",
+      "code": "T-04-242",
+      "risk": "TETH",
+      "maxEnergy": 12,
+      "damageType": "WHITE",
+      "damage": [
+        1,
+        3
+      ],
+      "qliphoth": null,
+      "good": [
+        9,
+        12
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {
+        "instinct": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "insight": [
+          50,
+          60,
+          65,
+          65,
+          65
+        ],
+        "attachment": [
+          50,
+          60,
+          65,
+          65,
+          75
+        ],
+        "repression": [
+          5,
+          5,
+          5,
+          5,
+          5
+        ]
+      }
+    },
+    {
+      "key": "behavior",
+      "name": "Behavior Adjustment",
+      "code": "O-09-96",
+      "risk": "TETH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "bracelet",
+      "name": "Luminous Bracelet",
+      "code": "O-09-95",
+      "risk": "TETH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "gamnacer",
+      "name": "Gamnacer",
+      "code": "O-05-33",
+      "risk": "TETH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "bowl",
+      "name": "Bowl of Candies",
+      "code": "R-09-330",
+      "risk": "TETH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "theresia",
+      "name": "Theresia",
+      "code": "T-09-09",
+      "risk": "TETH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "cytherean",
+      "name": "Cytherean Hex Dagger",
+      "code": "R-09-30",
+      "risk": "TETH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "der",
+      "name": "Der Freischütz",
+      "code": "F-01-69",
+      "risk": "HE",
+      "maxEnergy": 18,
+      "damageType": "BLACK",
+      "damage": [
+        3,
+        4
+      ],
+      "qliphoth": 3,
+      "good": [
+        12,
+        18
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ],
+        "insight": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          39,
+          39,
+          39,
+          39,
+          39
+        ],
+        "repression": [
+          0,
+          0,
+          60,
+          60,
+          60
+        ]
+      }
+    },
+    {
+      "key": "house",
+      "name": "Dr. House",
+      "code": "T-01-50",
+      "risk": "HE",
+      "maxEnergy": 15,
+      "damageType": "RED",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": null,
+      "good": [
+        12,
+        15
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          30,
+          40,
+          40,
+          50,
+          50
+        ],
+        "insight": [
+          40,
+          50,
+          50,
+          60,
+          60
+        ],
+        "attachment": [
+          30,
+          40,
+          40,
+          50,
+          50
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "funeral",
+      "name": "The Funeral of The Dead Butterflies",
+      "code": "T-01-68",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "WHITE",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": 2,
+      "good": [
+        11,
+        16
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          50,
+          45,
+          40,
+          0,
+          0
+        ],
+        "insight": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          0,
+          0,
+          60,
+          60,
+          60
+        ]
+      }
+    },
+    {
+      "key": "laetitia",
+      "name": "Laetitia",
+      "code": "O-01-67",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "BLACK",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": null,
+      "good": [
+        11,
+        16
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          45,
+          50,
+          50,
+          50
+        ],
+        "insight": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ],
+        "attachment": [
+          60,
+          60,
+          60,
+          65,
+          65
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "port",
+      "name": "PortAKiller",
+      "code": "R-01-97",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "RED",
+      "damage": [
+        4,
+        5
+      ],
+      "qliphoth": 2,
+      "good": [
+        12,
+        16
+      ],
+      "bad": [
+        0,
+        8
+      ],
+      "preferences": {
+        "instinct": [
+          25,
+          30,
+          35,
+          45,
+          50
+        ],
+        "insight": [
+          10,
+          25,
+          35,
+          35,
+          45
+        ],
+        "attachment": [
+          5,
+          5,
+          10,
+          10,
+          10
+        ],
+        "repression": [
+          15,
+          25,
+          25,
+          35,
+          45
+        ]
+      }
+    },
+    {
+      "key": "helper",
+      "name": "All-Around Helper",
+      "code": "T-05-41",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "RED",
+      "damage": [
+        3,
+        5
+      ],
+      "qliphoth": 2,
+      "good": [
+        10,
+        16
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          50,
+          55,
+          55,
+          50,
+          45
+        ],
+        "insight": [
+          0,
+          0,
+          -30,
+          -60,
+          -90
+        ],
+        "attachment": [
+          35,
+          40,
+          40,
+          35,
+          30
+        ],
+        "repression": [
+          50,
+          55,
+          55,
+          50,
+          45
+        ]
+      }
+    },
+    {
+      "key": "scribble",
+      "name": "Scribble",
+      "code": "T-06-37",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "WHITE",
+      "damage": [
+        3,
+        4
+      ],
+      "qliphoth": 2,
+      "good": [
+        11,
+        16
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          5,
+          0,
+          0
+        ],
+        "insight": [
+          70,
+          70,
+          70,
+          50,
+          50
+        ],
+        "attachment": [
+          50,
+          50,
+          40,
+          40,
+          30
+        ],
+        "repression": [
+          50,
+          50,
+          40,
+          40,
+          30
+        ]
+      }
+    },
+    {
+      "key": "fumos",
+      "name": "Fumos",
+      "code": "R-06-84",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "BLACK",
+      "damage": [
+        4,
+        5
+      ],
+      "qliphoth": 3,
+      "good": [
+        9,
+        16
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          30,
+          40,
+          40,
+          50,
+          50
+        ],
+        "insight": [
+          30,
+          40,
+          40,
+          50,
+          50
+        ],
+        "attachment": [
+          40,
+          50,
+          50,
+          60,
+          60
+        ],
+        "repression": [
+          20,
+          20,
+          20,
+          20,
+          20
+        ]
+      }
+    },
+    {
+      "key": "brickofcreation",
+      "name": "The Brick of Creation",
+      "code": "D-05-22",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "ALL",
+      "damage": [
+        4,
+        5
+      ],
+      "qliphoth": null,
+      "good": [
+        13,
+        16
+      ],
+      "bad": [
+        0,
+        8
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          40,
+          45,
+          50,
+          60
+        ],
+        "insight": [
+          40,
+          40,
+          45,
+          50,
+          60
+        ],
+        "attachment": [
+          40,
+          40,
+          45,
+          50,
+          60
+        ],
+        "repression": [
+          40,
+          40,
+          45,
+          50,
+          60
+        ]
+      }
+    },
+    {
+      "key": "snowqueen",
+      "name": "The Snow Queen",
+      "code": "F-01-37",
+      "risk": "HE",
+      "maxEnergy": 18,
+      "damageType": "WHITE",
+      "damage": [
+        4,
+        5
+      ],
+      "qliphoth": null,
+      "good": [
+        14,
+        18
+      ],
+      "bad": [
+        0,
+        7
+      ],
+      "preferences": {
+        "instinct": [
+          30,
+          30,
+          40,
+          40,
+          50
+        ],
+        "insight": [
+          50,
+          50,
+          60,
+          60,
+          70
+        ],
+        "attachment": [
+          40,
+          40,
+          50,
+          50,
+          60
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "winningsmile",
+      "name": "Winning Smile",
+      "code": "R-06-35",
+      "risk": "HE",
+      "maxEnergy": 14,
+      "damageType": "RED",
+      "damage": [
+        1,
+        3
+      ],
+      "qliphoth": 3,
+      "good": [
+        11,
+        14
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          15,
+          35,
+          65,
+          25,
+          10
+        ],
+        "insight": [
+          15,
+          20,
+          25,
+          30,
+          30
+        ],
+        "attachment": [
+          10,
+          10,
+          10,
+          10,
+          10
+        ],
+        "repression": [
+          10,
+          10,
+          45,
+          65,
+          75
+        ]
+      }
+    },
+    {
+      "key": "singingmachine",
+      "name": "Singing Machine",
+      "code": "O-05-30",
+      "risk": "HE",
+      "maxEnergy": 18,
+      "damageType": "WHITE",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": 1,
+      "good": [
+        8,
+        18
+      ],
+      "bad": [
+        0,
+        4
+      ],
+      "preferences": {
+        "instinct": [
+          55,
+          55,
+          60,
+          60,
+          65
+        ],
+        "insight": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          30,
+          30
+        ],
+        "repression": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "key": "skinwalker",
+      "name": "Husk",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {
+        "instinct": [
+          30,
+          30,
+          40,
+          50,
+          55
+        ],
+        "insight": [
+          30,
+          30,
+          40,
+          50,
+          55
+        ],
+        "attachment": [
+          50,
+          50,
+          55,
+          60,
+          60
+        ],
+        "repression": [
+          20,
+          20,
+          20,
+          20,
+          20
+        ]
+      }
+    },
+    {
+      "key": "happyteddybear",
+      "name": "Happy Teddy Bear",
+      "code": "T-04-06",
+      "risk": "HE",
+      "maxEnergy": 15,
+      "damageType": "WHITE",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": null,
+      "good": [
+        11,
+        15
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "insight": [
+          40,
+          45,
+          35,
+          35,
+          35
+        ],
+        "attachment": [
+          60,
+          60,
+          60,
+          50,
+          45
+        ],
+        "repression": [
+          45,
+          45,
+          45,
+          45,
+          35
+        ]
+      }
+    },
+    {
+      "key": "notes",
+      "name": "Notes from a Crazed Researcher",
+      "code": "T-09-78",
+      "risk": "HE",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "shelter",
+      "name": "Shelter from the 27th of March",
+      "code": "T-09-82",
+      "risk": "HE",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "treesap",
+      "name": "Giant Tree Sap",
+      "code": "T-09-80",
+      "risk": "HE",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "narrator",
+      "name": "The Narrator",
+      "code": "O-01-19",
+      "risk": "WAW",
+      "maxEnergy": 20,
+      "damageType": "BLACK",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": 2,
+      "good": [
+        17,
+        20
+      ],
+      "bad": [
+        0,
+        8
+      ],
+      "preferences": {
+        "instinct": [
+          20,
+          20,
+          20,
+          40,
+          40
+        ],
+        "insight": [
+          85,
+          85,
+          85,
+          85,
+          85
+        ],
+        "attachment": [
+          30,
+          40,
+          40,
+          50,
+          50
+        ],
+        "repression": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ]
+      }
+    },
+    {
+      "key": "drv",
+      "name": "Dimensional Refraction Variant",
+      "code": "O-03-88",
+      "risk": "WAW",
+      "maxEnergy": 22,
+      "damageType": "WHITE",
+      "damage": [
+        4,
+        7
+      ],
+      "qliphoth": 2,
+      "good": [
+        17,
+        22
+      ],
+      "bad": [
+        0,
+        8
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          40,
+          40,
+          40
+        ],
+        "insight": [
+          35,
+          40,
+          45,
+          50,
+          55
+        ],
+        "attachment": [
+          0,
+          0,
+          40,
+          40,
+          40
+        ],
+        "repression": [
+          0,
+          0,
+          40,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "key": "trowel",
+      "name": "TR0W3L=US3R;CYBORG",
+      "code": "O-05-43",
+      "risk": "WAW",
+      "maxEnergy": 22,
+      "damageType": "RED",
+      "damage": [
+        4,
+        8
+      ],
+      "qliphoth": 3,
+      "good": [
+        20,
+        22
+      ],
+      "bad": [
+        0,
+        12
+      ],
+      "preferences": {
+        "instinct": [
+          45,
+          45,
+          45,
+          45,
+          45
+        ],
+        "insight": [
+          15,
+          30,
+          30,
+          60,
+          60
+        ],
+        "attachment": [
+          0,
+          0,
+          15,
+          15,
+          15
+        ],
+        "repression": [
+          70,
+          70,
+          30,
+          15,
+          15
+        ]
+      }
+    },
+    {
+      "key": "wishroot",
+      "name": "Wishroot",
+      "code": "O-04-82",
+      "risk": "WAW",
+      "maxEnergy": 22,
+      "damageType": "PALE",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": null,
+      "good": [
+        13,
+        22
+      ],
+      "bad": [
+        0,
+        10
+      ],
+      "preferences": {
+        "instinct": [
+          30,
+          30,
+          60,
+          70,
+          70
+        ],
+        "insight": [
+          0,
+          0,
+          50,
+          60,
+          60
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          0,
+          0,
+          30,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "key": "fallion",
+      "name": "Fallion",
+      "code": "O-01-82",
+      "risk": "WAW",
+      "maxEnergy": 23,
+      "damageType": "WHITE",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": 3,
+      "good": [
+        16,
+        23
+      ],
+      "bad": [
+        0,
+        8
+      ],
+      "preferences": {
+        "instinct": [
+          5,
+          5,
+          5,
+          10,
+          10
+        ],
+        "insight": [
+          30,
+          40,
+          60,
+          70,
+          85
+        ],
+        "attachment": [
+          20,
+          30,
+          40,
+          60,
+          70
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          20,
+          30
+        ]
+      }
+    },
+    {
+      "key": "speedster",
+      "name": "Supa Speedster",
+      "code": "O-05-182",
+      "risk": "WAW",
+      "maxEnergy": 20,
+      "damageType": "WHITE",
+      "damage": [
+        5,
+        7
+      ],
+      "qliphoth": 3,
+      "good": [
+        16,
+        20
+      ],
+      "bad": [
+        0,
+        9
+      ],
+      "preferences": {
+        "instinct": [
+          40,
+          45,
+          60,
+          70,
+          80
+        ],
+        "insight": [
+          5,
+          5,
+          5,
+          5,
+          5
+        ],
+        "attachment": [
+          40,
+          40,
+          55,
+          70,
+          70
+        ],
+        "repression": [
+          15,
+          15,
+          15,
+          15,
+          15
+        ]
+      }
+    },
+    {
+      "key": "bigbird",
+      "name": "Big Bird",
+      "code": "O-02-40",
+      "risk": "WAW",
+      "maxEnergy": 20,
+      "damageType": "BLACK",
+      "damage": [
+        2,
+        6
+      ],
+      "qliphoth": 5,
+      "good": [
+        14,
+        20
+      ],
+      "bad": [
+        0,
+        7
+      ],
+      "preferences": {
+        "instinct": [
+          45,
+          45,
+          45,
+          50,
+          50
+        ],
+        "insight": [
+          35,
+          35,
+          35,
+          35,
+          35
+        ],
+        "attachment": [
+          40,
+          45,
+          50,
+          55,
+          55
+        ],
+        "repression": [
+          25,
+          20,
+          15,
+          10,
+          0
+        ]
+      }
+    },
+    {
+      "key": "uncertified",
+      "name": "Uncertified",
+      "code": "R-06-44",
+      "risk": "WAW",
+      "maxEnergy": 18,
+      "damageType": "BLACK",
+      "damage": [
+        3,
+        7
+      ],
+      "qliphoth": 3,
+      "good": [
+        16,
+        18
+      ],
+      "bad": [
+        0,
+        9
+      ],
+      "preferences": {
+        "instinct": [
+          30,
+          30,
+          40,
+          50,
+          60
+        ],
+        "insight": [
+          30,
+          30,
+          20,
+          10,
+          10
+        ],
+        "attachment": [
+          30,
+          30,
+          20,
+          10,
+          10
+        ],
+        "repression": [
+          30,
+          30,
+          40,
+          40,
+          50
+        ]
+      }
+    },
+    {
+      "key": "judgementbird",
+      "name": "Judgement Bird",
+      "code": "O-02-62",
+      "risk": "WAW",
+      "maxEnergy": 24,
+      "damageType": "PALE",
+      "damage": [
+        5,
+        7
+      ],
+      "qliphoth": 2,
+      "good": [
+        13,
+        24
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {
+        "instinct": [
+          20,
+          20,
+          35,
+          45,
+          45
+        ],
+        "insight": [
+          20,
+          20,
+          40,
+          50,
+          50
+        ],
+        "attachment": [
+          20,
+          20,
+          35,
+          45,
+          45
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "burrowing",
+      "name": "The Burrowing Heaven",
+      "code": "O-04-72",
+      "risk": "WAW",
+      "maxEnergy": 24,
+      "damageType": "BLACK",
+      "damage": [
+        4,
+        5
+      ],
+      "qliphoth": 3,
+      "good": [
+        21,
+        24
+      ],
+      "bad": [
+        0,
+        12
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "insight": [
+          0,
+          0,
+          35,
+          40,
+          45
+        ],
+        "attachment": [
+          50,
+          50,
+          50,
+          55,
+          55
+        ],
+        "repression": [
+          0,
+          0,
+          45,
+          50,
+          55
+        ]
+      }
+    },
+    {
+      "key": "worldmachine",
+      "name": "The World Machine",
+      "code": "O-05-17",
+      "risk": "WAW",
+      "maxEnergy": 24,
+      "damageType": "BLACK",
+      "damage": [
+        5,
+        7
+      ],
+      "qliphoth": 5,
+      "good": [
+        19,
+        24
+      ],
+      "bad": [
+        0,
+        12
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "insight": [
+          0,
+          0,
+          45,
+          55,
+          55
+        ],
+        "attachment": [
+          0,
+          0,
+          55,
+          65,
+          65
+        ],
+        "repression": [
+          45,
+          45,
+          35,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "skybox",
+      "name": "The Skybox",
+      "code": "D-06-58",
+      "risk": "WAW",
+      "maxEnergy": 22,
+      "damageType": "BLACK",
+      "damage": [
+        2,
+        5
+      ],
+      "qliphoth": 5,
+      "good": [
+        20,
+        22
+      ],
+      "bad": [
+        0,
+        8
+      ],
+      "preferences": {
+        "instinct": [
+          15,
+          15,
+          45,
+          45,
+          50
+        ],
+        "insight": [
+          5,
+          5,
+          5,
+          5,
+          5
+        ],
+        "attachment": [
+          45,
+          45,
+          50,
+          50,
+          55
+        ],
+        "repression": [
+          45,
+          50,
+          60,
+          60,
+          75
+        ]
+      }
+    },
+    {
+      "key": "snowwhitesapple",
+      "name": "Snow White's Apple",
+      "code": "F-04-42",
+      "risk": "WAW",
+      "maxEnergy": 20,
+      "damageType": "BLACK",
+      "damage": [
+        3,
+        5
+      ],
+      "qliphoth": 1,
+      "good": [
+        14,
+        20
+      ],
+      "bad": [
+        0,
+        7
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          40,
+          40,
+          40
+        ],
+        "insight": [
+          10,
+          20,
+          45,
+          45,
+          50
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          20,
+          30,
+          55,
+          55,
+          60
+        ]
+      }
+    },
+    {
+      "key": "syl",
+      "name": "Syl",
+      "code": "R-01-52",
+      "risk": "WAW",
+      "maxEnergy": 23,
+      "damageType": "WHITE",
+      "damage": [
+        5,
+        7
+      ],
+      "qliphoth": 2,
+      "good": [
+        17,
+        23
+      ],
+      "bad": [
+        0,
+        7
+      ],
+      "preferences": {
+        "instinct": [
+          15,
+          20,
+          25,
+          45,
+          40
+        ],
+        "insight": [
+          10,
+          10,
+          30,
+          45,
+          50
+        ],
+        "attachment": [
+          10,
+          15,
+          25,
+          35,
+          35
+        ],
+        "repression": [
+          5,
+          10,
+          15,
+          20,
+          25
+        ]
+      }
+    },
+    {
+      "key": "d6",
+      "name": "D6 Dice",
+      "code": "T-06-27",
+      "risk": "WAW",
+      "maxEnergy": 24,
+      "damageType": "WHITE",
+      "damage": [
+        6,
+        9
+      ],
+      "qliphoth": null,
+      "good": [
+        16,
+        24
+      ],
+      "bad": [
+        0,
+        10
+      ],
+      "preferences": {
+        "instinct": [
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "insight": [
+          35,
+          45,
+          60,
+          70,
+          80
+        ],
+        "attachment": [
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "repression": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ]
+      }
+    },
+    {
+      "key": "train",
+      "name": "Express Train to Hell",
+      "code": "T-09-86",
+      "risk": "WAW",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "backwardsclock",
+      "name": "Backward Clock",
+      "code": "D-09-104",
+      "risk": "WAW",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "fleshidol",
+      "name": "Flesh Idol",
+      "code": "T-09-79",
+      "risk": "WAW",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "illumina",
+      "name": "The Illumina",
+      "code": "O-09-95",
+      "risk": "WAW",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "nothingthere",
+      "name": "Nothing There",
+      "code": "O-06-20",
+      "risk": "ALEPH",
+      "maxEnergy": 33,
+      "damageType": "RED",
+      "damage": [
+        6,
+        9
+      ],
+      "qliphoth": 1,
+      "good": [
+        27,
+        33
+      ],
+      "bad": [
+        0,
+        16
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          35,
+          40,
+          45
+        ],
+        "insight": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "attachment": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "sledgequeen",
+      "name": "SledgeQueen",
+      "code": "R-05-25",
+      "risk": "ALEPH",
+      "maxEnergy": 30,
+      "damageType": "RED",
+      "damage": [
+        5,
+        10
+      ],
+      "qliphoth": 2,
+      "good": [
+        25,
+        30
+      ],
+      "bad": [
+        0,
+        16
+      ],
+      "preferences": {
+        "instinct": [
+          25,
+          30,
+          45,
+          50,
+          55
+        ],
+        "insight": [
+          40,
+          45,
+          60,
+          60,
+          80
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          5
+        ],
+        "repression": [
+          15,
+          25,
+          30,
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "key": "mountain",
+      "name": "Mountain Of Smiling Bodies",
+      "code": "T-01-75",
+      "risk": "ALEPH",
+      "maxEnergy": 30,
+      "damageType": "BLACK",
+      "damage": [
+        6,
+        8
+      ],
+      "qliphoth": 2,
+      "good": [
+        21,
+        30
+      ],
+      "bad": [
+        0,
+        10
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          50,
+          55
+        ],
+        "insight": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          50,
+          55
+        ]
+      }
+    },
+    {
+      "key": "orchestra",
+      "name": "The Silent Orchestra",
+      "code": "T-01-31",
+      "risk": "ALEPH",
+      "maxEnergy": 30,
+      "damageType": "WHITE",
+      "damage": [
+        7,
+        9
+      ],
+      "qliphoth": 2,
+      "good": [
+        19,
+        30
+      ],
+      "bad": [
+        0,
+        12
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "insight": [
+          0,
+          0,
+          30,
+          30,
+          40
+        ],
+        "attachment": [
+          0,
+          0,
+          40,
+          40,
+          50
+        ],
+        "repression": [
+          0,
+          0,
+          10,
+          20,
+          30
+        ]
+      }
+    },
+    {
+      "key": "censored",
+      "name": "CENSORED",
+      "code": "O-03-89",
+      "risk": "ALEPH",
+      "maxEnergy": 32,
+      "damageType": "BLACK",
+      "damage": [
+        5,
+        10
+      ],
+      "qliphoth": 2,
+      "bad": [
+        0,
+        16
+      ],
+      "preferences": {
+        "instinct": [
+          80,
+          70,
+          60,
+          50,
+          40
+        ],
+        "insight": [
+          90,
+          80,
+          70,
+          50,
+          50
+        ],
+        "attachment": [
+          70,
+          60,
+          50,
+          40,
+          30
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "sickler",
+      "name": "Sickler",
+      "code": "R-01-27",
+      "risk": "ALEPH",
+      "maxEnergy": 28,
+      "damageType": "RED",
+      "damage": [
+        6,
+        8
+      ],
+      "qliphoth": 2,
+      "good": [
+        23,
+        28
+      ],
+      "bad": [
+        0,
+        12
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "insight": [
+          20,
+          20,
+          30,
+          30,
+          40
+        ],
+        "attachment": [
+          40,
+          45,
+          50,
+          55,
+          60
+        ],
+        "repression": [
+          50,
+          55,
+          60,
+          65,
+          70
+        ]
+      }
+    },
+    {
+      "key": "bluestar",
+      "name": "Blue Star",
+      "code": "O-03-93",
+      "risk": "ALEPH",
+      "maxEnergy": 28,
+      "damageType": "WHITE",
+      "damage": [
+        6,
+        8
+      ],
+      "qliphoth": 2,
+      "good": [
+        23,
+        28
+      ],
+      "bad": [
+        0,
+        12
+      ],
+      "preferences": {
+        "instinct": [
+          30,
+          30,
+          30,
+          30,
+          30
+        ],
+        "insight": [
+          50,
+          50,
+          50,
+          50,
+          50
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          40,
+          40,
+          40,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "key": "king",
+      "name": "King",
+      "code": "O-03-61",
+      "risk": "ALEPH",
+      "maxEnergy": 31,
+      "damageType": "BLACK",
+      "damage": [
+        6,
+        8
+      ],
+      "qliphoth": 4,
+      "good": [
+        16,
+        31
+      ],
+      "bad": [
+        0,
+        2
+      ],
+      "preferences": {
+        "instinct": [
+          0,
+          35,
+          45,
+          50,
+          50
+        ],
+        "insight": [
+          15,
+          20,
+          25,
+          35,
+          35
+        ],
+        "attachment": [
+          15,
+          20,
+          25,
+          30,
+          40
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "nacker",
+      "name": "Nacker",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {
+        "instinct": [
+          0,
+          0,
+          10,
+          15,
+          20
+        ],
+        "insight": [
+          0,
+          0,
+          20,
+          35,
+          45
+        ],
+        "attachment": [
+          10,
+          30,
+          40,
+          45,
+          50
+        ],
+        "repression": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "key": "apoc",
+      "name": "Apocalypse Bird",
+      "code": "O-02-63",
+      "risk": "ALEPH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "shockkit",
+      "name": "Shock Kit",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "intelligence",
+      "name": "The Intelligence",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "deepseabunny",
+      "name": "Deep Sea Bunny",
+      "code": "O-02-32",
+      "risk": "TETH",
+      "maxEnergy": 14,
+      "damageType": "RED",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": 5,
+      "good": [
+        9,
+        14
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "calide",
+      "name": "Calide",
+      "code": "X-XX-XX",
+      "risk": "TETH",
+      "maxEnergy": 8,
+      "damageType": "WHITE",
+      "damage": [
+        6,
+        10
+      ],
+      "qliphoth": null,
+      "good": [
+        8
+      ],
+      "bad": [
+        0,
+        4
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "seven00",
+      "name": "700",
+      "code": "X-XX-XX",
+      "risk": "TETH",
+      "maxEnergy": 14,
+      "damageType": "RED",
+      "damage": [
+        2,
+        3
+      ],
+      "qliphoth": 2,
+      "good": [
+        10,
+        14
+      ],
+      "bad": [
+        0,
+        6
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "seeker",
+      "name": "The Seeker",
+      "code": "X-XX-XX",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "BLACK",
+      "damage": [
+        2,
+        4
+      ],
+      "qliphoth": 3,
+      "good": [
+        11,
+        16
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "dignity",
+      "name": "Dignity",
+      "code": "X-XX-XX",
+      "risk": "HE",
+      "maxEnergy": 20,
+      "damageType": "RED",
+      "damage": [
+        3,
+        7
+      ],
+      "qliphoth": 2,
+      "good": [
+        20
+      ],
+      "bad": [
+        0
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "lobco",
+      "name": "Lobco",
+      "code": "X-XX-XX",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "WHITE",
+      "damage": [
+        3,
+        5
+      ],
+      "qliphoth": null,
+      "good": [
+        9,
+        16
+      ],
+      "bad": [
+        0,
+        5
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "maltigi",
+      "name": "Maltigi",
+      "code": "D-06-23",
+      "risk": "HE",
+      "maxEnergy": 16,
+      "damageType": "RED",
+      "damage": [
+        3,
+        6
+      ],
+      "qliphoth": 2,
+      "good": [
+        12,
+        16
+      ],
+      "bad": [
+        0,
+        8
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "nosoi",
+      "name": "Nosoi",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "gravestone",
+      "name": "Gravestone",
+      "code": "R-06-72",
+      "risk": "WAW",
+      "maxEnergy": 18,
+      "damageType": "BLACK",
+      "damage": [
+        4,
+        6
+      ],
+      "qliphoth": 5,
+      "good": [
+        15,
+        18
+      ],
+      "bad": [
+        0,
+        7
+      ],
+      "preferences": {}
+    },
+    {
+      "key": "dozer",
+      "name": "Dozer",
+      "code": "X-XX-XX",
+      "risk": "ALEPH",
+      "maxEnergy": null,
+      "damageType": "BLACK",
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "influence",
+      "name": "The Influence",
+      "code": "T-06-83",
+      "risk": "ALEPH",
+      "maxEnergy": 36,
+      "damageType": "BLACK",
+      "damage": [
+        3,
+        7
+      ],
+      "qliphoth": 3,
+      "good": [
+        25,
+        36
+      ],
+      "bad": [
+        0,
+        12
+      ],
+      "preferences": {
+        "instinct": [
+          10,
+          15,
+          15,
+          25,
+          35
+        ],
+        "insight": [
+          70,
+          60,
+          50,
+          40,
+          30
+        ],
+        "attachment": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "repression": [
+          0,
+          15,
+          15,
+          20,
+          25
+        ]
+      }
+    },
+    {
+      "key": "skinprophecy",
+      "name": "Skin Prophecy",
+      "code": "T-09-90",
+      "risk": "TETH",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "portrait",
+      "name": "Portrait of Another World",
+      "code": "O-09-91",
+      "risk": "HE",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "ancientrunes",
+      "name": "Ancient Runes",
+      "code": "O-09-175",
+      "risk": "HE",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    },
+    {
+      "key": "gears",
+      "name": "GEARS",
+      "code": "X-XX-XX",
+      "risk": "HE",
+      "maxEnergy": null,
+      "qliphoth": null,
+      "preferences": {}
+    }
+  ]
+}

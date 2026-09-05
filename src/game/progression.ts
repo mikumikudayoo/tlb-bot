@@ -1,6 +1,9 @@
 import { db } from '../db/database';
 import { getWorkType } from '../config/workTypes';
 import type { StatName, WorkType } from '../types/game';
+import { statTier, agentTier, trainingCost, dayLob, overloadGain, extractionMultiplier, workGrowth } from './wikiRules';
+import wikiEquipment from '../config/wikiEquipment.json';
+import { createBoss, clearBossTarget, startBossSpecial } from './coreBoss';
 
 // The supplied guide describes systems, but not prices or pacing. These are
 // explicit Discord balance settings, not claims about the original game.
@@ -17,21 +20,29 @@ export const DEPARTMENTS = {
   record: { layer: 'Atziluth', sephirah: 'Hokma' }
 } as const;
 export const ORDEAL_STAGES = [
-  { name: 'dawn', meltdown: 1, colors: ['amber', 'crimson', 'green', 'violet'], hp: 100 },
-  { name: 'noon', meltdown: 2, colors: ['green', 'indigo'], hp: 200 },
-  { name: 'dusk', meltdown: 3, colors: ['green'], hp: 400 },
-  { name: 'midnight', meltdown: 4, colors: ['green'], hp: 800 }
+  { name: 'dawn', meltdown: 1, day: 6, reward: 0.10, colors: ['amber', 'crimson', 'green', 'violet'], hp: 100 },
+  { name: 'noon', meltdown: 3, day: 11, reward: 0.15, colors: ['green', 'indigo', 'violet'], hp: 200 },
+  { name: 'dusk', meltdown: 5, day: 21, reward: 0.20, colors: ['green', 'amber'], hp: 400 },
+  { name: 'midnight', meltdown: 7, day: 26, reward: 0.25, colors: ['green', 'amber'], hp: 800 }
 ] as const;
-export const EGO_CATALOG = [
+export const EGO_CATALOG: Array<{ id: string; source: string; script?: string; category: 'weapon' | 'suit'; lob: number; pe: number; risk?: string }> = [
   { id: 'penitence', source: 'One Sin and Hundreds of Good Deeds', script: 'O-03-03', category: 'weapon', lob: 10, pe: 3 },
   { id: 'penitence_suit', source: 'One Sin and Hundreds of Good Deeds', script: 'O-03-03', category: 'suit', lob: 10, pe: 3 },
-  { id: 'mimicry', source: 'Nothing There', script: 'O-06-20', category: 'weapon', lob: 25, pe: 8 },
-  { id: 'mimicry_suit', source: 'Nothing There', script: 'O-06-20', category: 'suit', lob: 25, pe: 8 }
-] as const;
+  { id: 'mimicry', source: 'Nothing There', script: 'O-06-20', category: 'weapon', lob: 280, pe: 280 },
+  { id: 'mimicry_suit', source: 'Nothing There', script: 'O-06-20', category: 'suit', lob: 160, pe: 160 }
+];
+for (const item of wikiEquipment) {
+  const old = EGO_CATALOG.findIndex(entry => entry.id === item.id);
+  const entry = { ...item, category: item.category as 'weapon' | 'suit' };
+  if (old >= 0) EGO_CATALOG[old] = entry;
+  else EGO_CATALOG.push(entry);
+}
 export const RESEARCH = {
   welfare_stims: { department: 'welfare', cost: 50 },
   command_shields: { department: 'command', cost: 50 },
-  extended_stats: { department: 'training', cost: 100 }
+  extended_stats: { department: 'training', cost: 100 },
+  joint_command: { department: 'control', cost: 50 },
+  improved_stims: { department: 'welfare', cost: 50 }
 } as const;
 
 function object(value: any): any {
@@ -78,35 +89,44 @@ export function persistAgentExtensions(agent: any) {
     agent.guild_id, agent.discord_id
   );
 }
-export function statLimit(agent: any, facility?: any) {
+export function statLimit(agent: any, facility?: any, stat?: StatName) {
   const extended = facilityProgress(facility).research.includes('extended_stats');
   const base = extended ? 150 : Math.min(150, Math.max(100, count(agent?.stat_limit)));
-  return base + (agentProgress(agent).cards.includes('break_your_limits') ? 25 : 0);
+  return base + (agentProgress(agent).cards.includes('break_your_limits') ? 25 : 0) + (facilityProgress(facility).cores.includes('record') ? stat === 'justice' ? 30 : 10 : 0);
 }
 export function growStat(agent: any, stat: StatName, amount: number, facility?: any) {
   if (!STATS.includes(stat)) throw new Error('unknown stat');
   const p = agentProgress(agent);
-  const limit = statLimit(agent, facility);
+  const limit = statLimit(agent, facility, stat);
   const before = count(p.points[stat]);
   const gain = Math.min(count(amount), Math.max(0, limit - before));
   p.points[stat] = before + gain;
   if (facilityProgress(facility).research.includes('extended_stats')) agent.stat_limit = 150;
-  agent[stat] = Math.max(1, Math.ceil(p.points[stat] / 20));
+  agent[stat] = statTier(p.points[stat]);
   agent.progression = JSON.stringify(p);
   return { gain, current: p.points[stat], limit };
 }
 export function departmentRank(workCount: number) {
   return workCount >= 30 ? 'captain' : workCount >= 15 ? 'level 3' : workCount >= 5 ? 'level 2' : 'level 1';
 }
-export function awardWorkProgress(agent: any, abno: any, workType: WorkType, peBoxes: number, facility: any) {
+export function awardWorkProgress(agent: any, abno: any, workType: WorkType, peBoxes: number, facility: any, damage: { hp?: number; sp?: number } = {}) {
   if (agent.status === 'dead') return 0;
-  const growth = growStat(agent, getWorkType(workType).stat, peBoxes > 0 ? 1 : 0, facility);
+  const stat = getWorkType(workType).stat;
+  const before = agentProgress(agent);
+  const accumulated = Number(before.growth?.[stat] || 0) + workGrowth(before.points[stat], abno.risk, peBoxes, stat, damage.hp || 0, damage.sp || 0);
+  const whole = Math.floor(accumulated + 1e-9);
+  const growth = growStat(agent, stat, whole, facility);
   const p = agentProgress(agent);
+  p.growth = { ...p.growth, [stat]: growth.current >= growth.limit ? 0 : accumulated - whole };
   p.pe[String(abno.id)] = count(p.pe[String(abno.id)]) + count(peBoxes);
+  p.lob = count(p.lob) + count(peBoxes);
+  const fp = facilityProgress(db.query('SELECT * FROM facility WHERE guild_id=?').get(facility.guild_id) || facility);
+  fp.overload = { ...fp.overload, [String(abno.id)]: count(fp.overload?.[String(abno.id)]) + (peBoxes > 0 ? overloadGain(abno.risk) : 0) };
+  saveFacilityProgress(facility, fp);
   const department = agent.department || 'control';
   p.tenure[department] = count(p.tenure[department]) + 1;
-  if (Number(agent.level) >= 5 && !p.cards.includes('break_your_limits')) p.cards.push('break_your_limits');
   agent.progression = JSON.stringify(p);
+  agent.level = agentTier(STATS.map(stat => p.points[stat]));
   return growth.gain;
 }
 function getActor(guildId: string, userId: string) {
@@ -121,30 +141,40 @@ export function trainWithLob(guildId: string, userId: string, stat: StatName) {
     const { agent, facility } = getActor(guildId, userId);
     if (Number(facility.phase) !== 8) throw new Error('LOB training is available during the 08:00 intermission');
     const p = agentProgress(agent);
-    if (count(p.lob) < 5) throw new Error('training costs 5 personal LOB');
+    if (!STATS.includes(stat)) throw new Error('unknown stat');
+    const cost = trainingCost(stat);
+    if (count(p.lob) < cost) throw new Error(`training costs ${cost} personal LOB`);
     const growth = growStat(agent, stat, 5, facility);
     if (!growth.gain) throw new Error('that stat is already at its limit');
     const updated = agentProgress(agent);
-    updated.lob = p.lob - 5;
+    updated.lob = p.lob - cost;
+    agent.level = agentTier(STATS.map(stat => updated.points[stat]));
     saveAgentProgress(agent, updated);
-    return { ...growth, agent };
+    db.query('UPDATE agents SET level=? WHERE guild_id=? AND discord_id=?').run(agent.level, guildId, userId);
+    return { ...growth, cost, agent };
   })();
 }
 export function purchaseEgo(guildId: string, userId: string, itemId: string) {
   return db.transaction(() => {
-    const { agent } = getActor(guildId, userId);
+    const { agent, facility } = getActor(guildId, userId);
     const item = EGO_CATALOG.find(entry => entry.id === itemId);
     if (!item) throw new Error('that item isn’t available for extraction');
     const p = agentProgress(agent);
     if (!p.inventory.includes(item.id)) {
+      const fp = facilityProgress(facility);
+      const previous = count(fp.extractions?.[item.id]);
+      const multiplier = extractionMultiplier(item.risk || 'ZAYIN', previous) * (fp.cores.includes('disciplinary') ? .5 : 1);
+      const lob = Math.ceil(item.lob * multiplier), pe = Math.ceil(item.pe * multiplier);
       const sources = db.query(`SELECT a.id, k.instinct_pe+k.insight_pe+k.attachment_pe+k.repression_pe AS observed
         FROM abnormalities a JOIN agent_abnormality_knowledge k ON k.guild_id=a.guild_id AND k.abnormality_id=a.id
-        WHERE a.guild_id=? AND k.discord_id=? AND (a.name=? OR a.script_id=?) ORDER BY a.id`).all(guildId, userId, item.source, item.script) as any[];
-      const source = sources.find(a => Number(a.observed) >= 8 && count(p.pe[String(a.id)]) >= item.pe);
-      if (!source) throw new Error(`fully observe ${item.source} (8 unique observations) and earn ${item.pe} spendable PE from that same abnormality`);
-      if (count(p.lob) < item.lob) throw new Error(`extraction costs ${item.lob} personal LOB`);
-      p.pe[String(source.id)] -= item.pe;
-      p.lob -= item.lob;
+        WHERE a.guild_id=? AND k.discord_id=? AND (a.name=? OR a.script_id=?) ORDER BY a.id`).all(guildId, userId, item.source, item.script === 'X-XX-XX' ? null : item.script || null) as any[];
+      const source = sources.find(a => Number(a.observed) >= 8 && count(p.pe[String(a.id)]) >= pe);
+      if (!source) throw new Error(`fully observe ${item.source} (8 unique observations) and earn ${pe} spendable PE from that same abnormality`);
+      if (count(p.lob) < lob) throw new Error(`extraction costs ${lob} personal LOB`);
+      p.pe[String(source.id)] -= pe;
+      p.lob -= lob;
+      fp.extractions = { ...fp.extractions, [item.id]: previous + 1 };
+      saveFacilityProgress(facility, fp);
       p.inventory.push(item.id);
     }
     agent[item.category] = item.id;
@@ -183,11 +213,17 @@ export function useStim(agent: any, facility: any, type: string) {
   if (type === 'health' || type === 'sanity') {
     const key = type === 'health' ? 'hp' : 'sp';
     if (agent[key] >= agent[`max_${key}`]) throw new Error(`${key} is already full`);
-    agent[key] = Math.min(agent[`max_${key}`], agent[key] + Math.ceil(agent[`max_${key}`] * 0.25));
+    agent[key] = Math.min(agent[`max_${key}`], agent[key] + (facilityProgress(facility).research.includes('improved_stims') ? 35 : 20));
     if (type === 'sanity' && agent.sp > 0 && ['panicked', 'traumatized'].includes(agent.status)) {
       agent.status = 'recovering'; agent.panic_turns = 0; agent.panic_behavior = '';
     }
-  } else agent[`shield_${type}`] = count(agent[`shield_${type}`]) + 25;
+  } else {
+    for (const color of ['red', 'white', 'black', 'pale']) agent[`shield_${color}`] = 0;
+    agent[`shield_${type}`] = 50;
+    const p = agentProgress(agent);
+    p.shieldExpiresAt = Date.now() + 20_000;
+    agent.progression = JSON.stringify(p);
+  }
   charges[type] -= 1;
   agent.stim_charges = JSON.stringify(charges);
   return charges[type];
@@ -200,17 +236,40 @@ export function startCore(guildId: string, managerId: string, department: string
   if (p.core || p.cores.includes(department)) throw new Error('a core challenge is already active or this core was cleared');
   const quest = db.query('SELECT complete FROM department_quests WHERE guild_id=? AND department=? AND complete=1').get(guildId, department);
   if (!quest) throw new Error('complete that department quest first');
-  p.core = { department, progress: 0, target: 5 };
+  const day = department === 'extraction' || department === 'record' ? 41 : ['command','disciplinary','welfare'].includes(department) ? 35 : 20;
+  if (Number(f.day_count) < day || Number(f.day_count) >= 46) throw new Error(`this core is available from day ${day} through day 45`);
+  if (Number(f.phase) !== 8 || f.ordeal_active) throw new Error('start core suppression during the 08:00 intermission, without an active ordeal');
+  const boss = department === 'disciplinary' ? createBoss('red_mist') : department === 'extraction' ? createBoss('arbiter') : null;
+  if (boss?.kind === 'arbiter') {
+    const targets = db.query('SELECT id FROM abnormalities WHERE guild_id=? AND is_breaching=0 ORDER BY id LIMIT 2').all(guildId) as any[];
+    if (!targets.length) throw new Error('Binah needs at least one contained abnormality for special meltdowns');
+    startBossSpecial(boss, targets.map(a => a.id), Date.now());
+  }
+  p.core = { department, version: 2, progress: 0, target: department === 'command' ? 10 : department === 'welfare' ? 8 : department === 'record' ? 11 : 6, boss };
   saveFacilityProgress(f, p);
 }
 export function advanceCore(facility: any, department: string, good: boolean) {
+  facility = db.query('SELECT * FROM facility WHERE guild_id=?').get(facility.guild_id) || facility;
   const p = facilityProgress(facility);
-  if (!p.core || p.core.department !== department || !good) return false;
-  p.core.progress += 1;
-  const cleared = p.core.progress >= p.core.target;
-  if (cleared) { p.cores.push(department); p.core = null; }
+  if (!p.core) return false;
+  // Preserve an already-running legacy challenge when loading an old save.
+  if (p.core.version !== 2 && (p.core.department !== department || !good)) return false;
+  if (p.core.version !== 2) p.core.progress += 1;
+  else p.core.progress = p.meltdown;
+  const cleared = p.core.version !== 2 ? p.core.progress >= p.core.target : !facility.ordeal_active && !p.ordeal &&
+    (p.core.boss ? p.core.boss.hp <= 0 : p.meltdown >= p.core.target && Number(facility.energy) >= Number(facility.quota));
+  if (cleared) { p.cores = [...new Set([...p.cores, p.core.department])]; p.core = null; }
   saveFacilityProgress(facility, p);
   return cleared;
+}
+export function defuseBossMeltdown(guildId: string, abnormalityId: number, now = Date.now()) {
+  const f = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
+  const p = facilityProgress(f);
+  if (!p.core?.boss) return false;
+  const players = db.query("SELECT COUNT(*) AS n FROM agents WHERE guild_id=? AND status<>'dead'").get(guildId) as any;
+  if (!clearBossTarget(p.core.boss, abnormalityId, now, Number(players.n))) return false;
+  saveFacilityProgress(f, p);
+  return true;
 }
 export function defuseWorkMeltdown(guildId: string, abnormality: any) {
   const f = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
@@ -227,9 +286,9 @@ export function startOrdeal(facility: any, random = Math.random) {
   const p = facilityProgress(facility);
   if (facility.ordeal_active || p.ordeal) return false;
   const stage = ORDEAL_STAGES[p.ordealIndex];
-  if (!stage || p.meltdown < stage.meltdown) return false;
-  const color = stage.colors[Math.min(stage.colors.length - 1, Math.max(0, Math.floor(random() * stage.colors.length)))];
-  p.ordeal = { stage: stage.name, color, hp: stage.hp, maxHp: stage.hp };
+  if (!stage || p.meltdown < stage.meltdown || Number(facility.day_count) < stage.day) return false;
+  const color = Number(facility.day_count) >= 46 && Number(facility.day_count) <= 49 ? 'white' : stage.colors[Math.min(stage.colors.length - 1, Math.max(0, Math.floor(random() * stage.colors.length)))];
+  p.ordeal = { stage: stage.name, color, hp: stage.hp, maxHp: stage.hp, reward: stage.reward };
   p.ordealIndex += 1;
   saveFacilityProgress(facility, p);
   facility.ordeal_active = 1; facility.active_ordeal = `${stage.name}:${color}`;
@@ -249,11 +308,15 @@ export function migrateLegacyOrdeal(facility: any) {
   db.query('UPDATE facility SET active_ordeal=?, ordeal_timer=0 WHERE guild_id=?').run(facility.active_ordeal, facility.guild_id);
 }
 export function damageOrdeal(facility: any, damage: number) {
+  facility = db.query('SELECT * FROM facility WHERE guild_id=?').get(facility.guild_id) || facility;
   const p = facilityProgress(facility);
   if (!p.ordeal) throw new Error('there is no active ordeal');
   p.ordeal.hp = Math.max(0, p.ordeal.hp - count(damage));
   const remaining = p.ordeal.hp;
   if (!remaining) {
+    const stage = ORDEAL_STAGES.find(s => s.name === p.ordeal.stage);
+    const reward = Math.floor(Number(facility.quota) * (stage?.reward ?? 0));
+    db.query('UPDATE facility SET energy=energy+? WHERE guild_id=?').run(reward, facility.guild_id);
     p.ordeal = null; facility.ordeal_active = 0; facility.active_ordeal = '';
     db.query("UPDATE facility SET ordeal_active=0, active_ordeal='', ordeal_timer=0 WHERE guild_id=?").run(facility.guild_id);
     db.query('UPDATE ordeal_events SET active=0 WHERE guild_id=?').run(facility.guild_id);
@@ -263,12 +326,12 @@ export function damageOrdeal(facility: any, damage: number) {
 }
 export function resetProgressionDay(facility: any, quotaMet: boolean) {
   const p = facilityProgress(facility);
-  Object.assign(p, { meltdown: 0, workCount: 0, ordealIndex: 0, ordeal: null });
+  Object.assign(p, { meltdown: 0, workCount: 0, ordealIndex: 0, ordeal: null, overload: {} });
   saveFacilityProgress(facility, p);
   const agents = db.query("SELECT * FROM agents WHERE guild_id=? AND status<>'dead'").all(facility.guild_id) as any[];
   for (const agent of agents) {
     const ap = agentProgress(agent);
-    if (quotaMet) ap.lob = count(ap.lob) + 10;
+    ap.lob = count(ap.lob) + dayLob(Number(facility.day_count), p.cores.length);
     saveAgentProgress(agent, ap);
     db.query('UPDATE agents SET stim_charges=?, shield_red=0, shield_white=0, shield_black=0, shield_pale=0 WHERE guild_id=? AND discord_id=?').run(JSON.stringify(stimLoadout(facility)), facility.guild_id, agent.discord_id);
   }

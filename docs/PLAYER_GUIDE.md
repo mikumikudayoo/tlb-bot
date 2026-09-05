@@ -15,7 +15,7 @@ new here? start with `/join`. you can come back to `/help` whenever you need it,
 5. something escaped? use the buttons on its breach alert. for ordeals, use `/ordeal action:fight`.
 6. clear any breaches and ordeals before `/end-day`.
 
-work moves the clock from 08:00 to 22:00. **08:00 is your training window**, so spend your LOB before anyone starts working. at 22:00, no more work can start.
+work moves the clock from 08:00 to 22:00. **08:00 is your training window**, so spend your LOB before anyone starts working. you can keep working overtime at 22:00.
 
 ## abnormalities and work
 
@@ -36,7 +36,9 @@ each abnormality has its own preferences and rules. the right work type helps, b
 | attachment | temperance | black |
 | repression | justice | pale |
 
-finish a work alive with at least one positive box to earn **+1 to the matching stat**. leveling up also gives +1 to a random stat. higher work levels are riskier.
+surviving work trains its matching stat. growth depends on positive boxes, stat tier, abnormality risk and damage taken during that work; fractional progress carries over. verified wiki entries use their box capacity, tier-specific preferences and mood thresholds. older entries still use fallback work rules.
+
+each positive box also earns one personal LOB and one PE tied to that abnormality. work outside your department needs Control's `joint_command` research (legacy General agents are exempt). repeated HE/WAW/ALEPH works add 2/4/6 percentage points of overload, lowering the success cap until the next meltdown.
 
 working also teaches you about that abnormality:
 
@@ -48,31 +50,31 @@ working also teaches you about that abnormality:
 
 stats normally cap at **100**. the manager can research `extended_stats` to raise that to **150**. the **Break Your Limits** card adds another 25, for a cap of 125 or 175.
 
-you get Break Your Limits once you survive a work at level 5 or above. you can only get it once per agent; it's the only card available right now.
+existing Break Your Limits cards still work, but reaching level 5 no longer awards one automatically. the original game's trait-choice system isn't implemented yet; these cap upgrades are legacy bot rules.
 
-you start with **10 personal LOB** and earn **10 more** for each day you survive with the quota met. your LOB pays for training and gear. the facility has a separate balance for upgrades and research.
+you start with **10 personal LOB**. new-day rewards are **5 × days passed + 10 × cleared facility cores**. your LOB pays for training and gear. the facility has a separate balance for upgrades and research.
 
 ```text
 /lob stat:fortitude
 /train agent:@player stat:prudence
 ```
 
-training costs **5 personal LOB for up to +5 points**, only at 08:00. use `/lob` for yourself; the manager can use `/train` for someone else, paid from that agent's LOB. near the cap you'll get fewer points for the same price. already capped? you won't be charged. dead or working agents can't train.
+training costs **100 personal LOB for up to +5 points**, or **200 for justice**, only at 08:00. use `/lob` for yourself; the manager can use `/train` for someone else, paid from that agent's LOB. near the cap you'll get fewer points for the same price. already capped? you won't be charged. dead or working agents can't train.
 
-combat uses stat tiers: 1–20 points is tier 1, 21–40 is tier 2, and so on. health, sanity and abnormality stat checks use those tiers. older agents' tier 1–5 stats convert to 20–100 points once. `/stats` shows your base points; `/status` includes gear and gift effects.
+stat tiers advance at **30, 45, 65 and 85 points**. agent level comes from the sum of all four stat tiers, advancing at totals **6, 10, 14 and 18**; EXP no longer gives random stat upgrades. base HP equals fortitude and base SP equals prudence. justice improves attack speed. older tier-only agents convert to 20–100 raw points once. `/stats` shows your raw points.
 
 ## E.G.O. equipment and gifts
 
-use `/ego` to see the gear list. `/ego item:penitence` buys and equips Penitence. already own it? equipping it again is free.
+use `/ego` to see the gear list, and `/ego page:2` for more. `/ego item:penitence` buys and equips Penitence. already own it? equipping it again is free. the catalogue now includes 109 imported weapon/suit entries alongside legacy gear.
 
 | item id | fully observed source | personal LOB | source PE |
 | --- | --- | ---: | ---: |
 | penitence | One Sin and Hundreds of Good Deeds | 10 | 3 |
 | penitence_suit | One Sin and Hundreds of Good Deeds | 10 | 3 |
-| mimicry | Nothing There | 25 | 8 |
-| mimicry_suit | Nothing There | 25 | 8 |
+| mimicry | Nothing There | 280 | 280 |
+| mimicry_suit | Nothing There | 160 | 160 |
 
-you need **your own 8/8 observation record**, enough personal LOB, and PE from that same abnormality. bought gear stays in your inventory and saves; a failed purchase costs nothing. only the items listed above are available for extraction right now.
+you need **your own 8/8 observation record**, enough personal LOB, and PE from that same abnormality. bought gear stays in your inventory and saves; a failed purchase costs nothing. each new facility extraction increases that item's price by 10/20/30/40/50% of its base price for ZAYIN/TETH/HE/WAW/ALEPH, capped at 3×. `/ego` shows the current price. most special weapon abilities and original attack timings are not implemented yet.
 
 | incoming damage | effect |
 | --- | --- |
@@ -81,7 +83,7 @@ you need **your own 8/8 observation record**, enough personal LOB, and PE from t
 | BLACK | damages both HP and SP, not divided between them |
 | PALE | percentage of maximum HP, followed by modifiers and a matching shield |
 
-**lower suit multipliers are better**: 0.5 means half damage, 1.5 means one and a half times damage. traits and gifts can change damage too. enemies only have HP, so WHITE weapons still hurt them; PALE weapons deal a percentage of their maximum HP.
+**lower suit multipliers are better**: 0.5 means half damage, 1.5 means one and a half times damage. equipment-versus-target risk also modifies damage. traits and gifts can change combat damage, but their defense modifiers do not reduce work damage. enemies only have HP, so WHITE weapons still hurt them; PALE weapons deal flat damage against abnormalities.
 
 gifts can drop from suppression. the chance is 15% + 5% per risk tier, up to 55%, and you can't own duplicates. check `/gifts` before equipping one with `/equip-gift gift:NAME`: some have drawbacks as well as bonuses.
 
@@ -94,14 +96,16 @@ research is manager-only and costs facility LOB. `/research` lists the projects;
 | welfare_stims | welfare | 50 | health and sanity stims |
 | command_shields | command | 50 | red, white and black shields |
 | extended_stats | training | 100 | 150-point base stat limit |
+| joint_command | control | 50 | work outside your department |
+| improved_stims | welfare | 50 | 35-point healing stims |
 
-use `/stim type:health`, `/stim type:sanity` or pick a shield color. health and sanity stims restore 25% of your maximum. using one at full health or sanity won't waste it. a sanity stim also clears panic or trauma and puts your agent into recovery.
+use `/stim type:health`, `/stim type:sanity` or pick a shield color. health and sanity stims restore **20 points**, or **35** with `improved_stims`. using one at full health or sanity won't waste it. a sanity stim also clears panic or trauma and puts your agent into recovery.
 
-shields block **25 damage** of their own color. red won't block BLACK. pale shields block HP damage after the percentage is worked out, not 25 percentage points.
+shields block **50 damage** of their own color for **20 seconds**. a new shield replaces the previous one; they don't stack. red won't block BLACK. pale shields block HP damage after the percentage is worked out, not 50 percentage points.
 
 **pale shields need both `command_shields` research and a cleared Command/Tiphereth core.** having charges in an old save doesn't skip the unlock.
 
-buying research gives you the supplies it unlocks. each new day refills health/sanity stims to two each and unlocked shields to one each. active shields reset too. after clearing Command's core, pale charges come with your next refill. you can't use stims while dead or working.
+buying research gives you the supplies it unlocks. each new day and meltdown refills researched stims. active shields reset on a new day too. after clearing Command's core, pale charges come with your next refill. you can't use stims while dead or working.
 
 ## meltdowns and ordeals
 
@@ -112,13 +116,13 @@ work on a marked abnormality to defuse its timer. let it expire and its Qliphoth
 | stage | meltdown level | possible colors | shared HP |
 | --- | ---: | --- | ---: |
 | dawn | 1 | amber, crimson, green, violet | 100 |
-| noon | 2 | green, indigo | 200 |
-| dusk | 3 | green | 400 |
-| midnight | 4 | green | 800 |
+| noon | 3 | green, indigo, violet | 200 |
+| dusk | 5 | green, amber | 400 |
+| midnight | 7 | green, amber | 800 |
 
-each stage can happen once per day, with only one ordeal active at a time. meltdown level triggers them, not your energy total.
+each stage can happen once per day, with only one ordeal active at a time. dawn/noon/dusk/midnight unlock on days **6/11/21/26**. suppressing them awards **10/15/20/25% of quota** in energy, once. days 46–49 use White ordeals exclusively.
 
-check `/ordeal`, then use `/ordeal action:fight` to attack with your equipped weapon. it hits back: violet damages sanity, the others damage HP. there's a short cooldown between attacks. everyone chips away at the same health bar; bring it to zero before ending the day.
+check `/ordeal`, then use `/ordeal action:fight` to attack with your equipped weapon. it hits back: violet deals BLACK damage, the others currently use RED. there's a short cooldown between attacks. everyone chips away at the same health bar; bring it to zero before ending the day.
 
 ordeals here are shared fights, without the original game's moving enemies, minions or full boss patterns.
 
@@ -156,11 +160,40 @@ quests only count progress after their department opens. Extraction is the excep
 
 survive work while stationed in a department to build your service rank: level 1 to start, level 2 at 5 works, level 3 at 15, and captain at 30. ranks don't give combat bonuses.
 
-once a department's quest is done, the manager can start `/core department:NAME`. only one core can be active. clear it with **five good works that you survive while stationed there**. Information's core hides `/info`, its buttons, `/stats`, `/history` and `/work-history` until you finish; it doesn't touch server messages.
+once a department's quest is done, the manager can start `/core department:NAME` at 08:00. only one core can be active. upper-layer cores unlock on day 20, middle-layer cores on day 35, and lower-layer cores on day 41. new cores cannot start from day 46 onward. everyone can inspect `/core`.
+
+Control, Information, Training and Security require meltdown 6 and quota; Command requires 10, Welfare 8, and Record 11. finish any active ordeal before the core can clear. Disciplinary and Extraction require defeating their bosses instead. an already-running five-work challenge from an old save keeps its old goal.
+
+Information's core hides `/info`, its buttons, `/stats`, `/history` and `/work-history`; it doesn't touch server messages. Command and Record temporarily override cleared departments' meltdown immunity. the other non-boss core side effects are still unfinished.
 
 clearing a core stops that department's Qliphoth meltdowns permanently and removes any active timers there. abnormalities can still escape through their usual rules. clearing Command also unlocks pale shields if you've researched them.
 
-cores use the five-work challenge here, not the original boss fights. Information is currently the only one with an extra challenge effect.
+clearing Disciplinary halves extraction prices. Record raises the cap by 10 for fortitude, prudence and temperance, and 30 for justice. several other original core rewards remain unfinished. a day cannot end while a core is active; use an earlier save if you need to abandon the attempt.
+
+## core boss encounters
+
+start with `/core department:disciplinary` for the Red Mist, or `/core department:extraction` for An Arbiter. only the manager starts fights, but every living, sane agent who isn't working or travelling can participate.
+
+- `/core` shows the current phase, HP, next attack and any marked containment units.
+- `/core action:fight` attacks and takes the boss's response.
+- `/core action:block` gives up your attack to halve incoming damage. unblockable attacks ignore it.
+- `/core action:dodge` gives up your attack to evade the telegraphed attack. active Waves still hurt.
+- `/core action:ability` uses Mimicry's Downslam: 80–130 RED base damage and 50% defense for the response. other active weapon abilities aren't wired yet.
+
+these are turn-based encounters, not frame-timed combat. phases, counters, special targets and your action cooldown save with the facility. one large hit cannot skip a phase. crossing into a new phase interrupts the previous attack.
+
+**the Red Mist** has four separate 3,000-HP phases and changes resistances each phase. her attacks progress through Red Eyes/Penitence, Smile/Justitia, Da Capo/Mimicry (including the half-health Great Splits), and Twilight. phase four's hunt leaves a ten-second opening. portal movement, Da Capo's separate summoned enemy, full stagger mechanics and some secondary attacks aren't simulated yet.
+
+**An Arbiter** has three separate 4,000-HP phases. work the IDs listed by `/core` using the normal work menu; surviving a completed work clears that target.
+
+- Gold: clear every target to stun her for 12–20 seconds, depending on living agent count. expires after 60 seconds; failure restores 120 HP at the next combat action instead of regenerating gradually.
+- Dark Fog: clear every target to change her resistance to 1.5 for 25 seconds, then 0.4. the initial resistance is 0.1. expires after 60 seconds.
+- Waves: BLACK chip damage during combat actions until the targets are cleared; no countdown.
+- Bounding of Fairies: phase-three immunity until every target is cleared. **untimed in this bot**, without the original 30-second instant-death penalty.
+
+Binah uses two containment targets when available. pillar movement, Lock, Chain, the Fairy status debuff and facility-wide attacks remain unfinished. attack cadence and target count are Discord adaptations. timed effects are checked on actions and aren't suspended by pausing the shift.
+
+Mimicry heals 25% of actual damage dealt, not overkill. Da Capo resolves its four 5–6 WHITE hits plus a 6–7 finisher as one attack. Smile starts at 12–18 BLACK, increases with kills up to 36–42 at ten kills, and heals 25% max HP on a kill. these basic weapon effects also work in ordinary suppression and ordeals. none can revive a dead attacker.
 
 ## recruitment and manager tests
 

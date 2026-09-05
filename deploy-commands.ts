@@ -28,7 +28,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('lob')
-    .setDescription('spend 5 personal LOB for up to 5 stat points at 08:00')
+    .setDescription('train up to 5 points at 08:00: 100 personal LOB, or 200 for justice')
     .addStringOption(opt => opt
       .setName('stat')
       .setDescription('stat to increase')
@@ -66,13 +66,16 @@ const commands = [
     .addStringOption(opt => opt.setName('project').setDescription('leave blank to list projects').addChoices(
       { name: 'Welfare stims', value: 'welfare_stims' },
       { name: 'Command shields', value: 'command_shields' },
-      { name: '150-point stat limits', value: 'extended_stats' }
+      { name: '150-point stat limits', value: 'extended_stats' },
+      { name: 'Joint Command: cross-department work', value: 'joint_command' },
+      { name: 'Improved stims: restore 35 HP/SP', value: 'improved_stims' }
     )),
 
   new SlashCommandBuilder()
     .setName('core')
-    .setDescription('manager: inspect or start a department core challenge')
-    .addStringOption(opt => opt.setName('department').setDescription('leave blank to inspect; choose to start').addChoices(...departmentChoices)),
+    .setDescription('inspect or fight a core; managers can start one')
+    .addStringOption(opt => opt.setName('department').setDescription('manager: choose a core to start').addChoices(...departmentChoices))
+    .addStringOption(opt => opt.setName('action').setDescription('respond to the core boss attack').addChoices({ name: 'fight', value: 'fight' }, { name: 'block', value: 'block' }, { name: 'dodge', value: 'dodge' }, { name: 'E.G.O. ability (Mimicry Downslam)', value: 'ability' })),
 
   new SlashCommandBuilder()
     .setName('ordeal')
@@ -141,6 +144,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('ego')
     .setDescription('browse, buy or equip E.G.O. gear')
+    .addIntegerOption(opt => opt.setName('page').setDescription('catalogue page').setMinValue(1))
     .addStringOption(opt => opt
       .setName('item')
       .setDescription('equipment name or ID; leave blank to list the catalogue')

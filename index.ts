@@ -19,7 +19,10 @@ import { getWorkType } from './src/config/workTypes';
 import { db as facilityDb } from './src/db/database';
 import * as repositories from './src/repositories';
 import * as Progression from './src/game/progression';
+import { rawPoints, rollWikiWork, wikiAbnormality, riskMultiplier, attackSpeed, equipmentRisk, agentTier, statTier } from './src/game/wikiRules';
+import wikiData from './src/config/wikiAbnormalities.json';
 import { PROGRESSION_COMMANDS, handleProgressionCommand } from './src/discord/progressionCommands';
+import { rollEgoAttack, finishEgoAttack } from './src/game/egoAbilities';
 import { handleHelpCommand } from './src/discord/helpCommand';
 import { createDiscordClient, loginDiscordClient } from './src/discord/client';
 import {
@@ -68,6 +71,7 @@ const SUPPRESSION_COOLDOWNS = new Map<string, number>();
 // ABNORMALITY_SCRIPTS is now loaded from externalAbnoScripts (src/game/abnormalities/scripts.ts)
 const ABNORMALITY_SCRIPTS: Record<string, AbnormalityScript> = externalAbnoScripts;
 
+import { getGuildEmojiObject, getGuildEmojiString, workButtonEmoji } from './src/discord/emojis';
 const LOBOTOMY_EMOJIS = {
   work: { instinct: 'Instinct', insight: 'Insight', attachment: 'Attachment', repression: 'Repression' },
   meltdown: { stable: '🟢', unstable: '🟡', critical: '🟠', meltdown: '🔴' },
@@ -76,7 +80,7 @@ const LOBOTOMY_EMOJIS = {
   damage: { RED: 'RedDamageTypeIcon', WHITE: 'WhiteDamageTypeIcon', BLACK: 'BlackDamageTypeIcon', PALE: 'PaleDamageTypeIcon' },
   result: { good: 'GoodResult', normal: 'NormalResult', bad: 'BadResult' },
   warn: { 1: 'Warn_1', 2: 'Warn_2', 3: 'Warn_3' },
-  stat: { fortitude: 'FortitudeIcon', prudence: 'PrudenceIcon', temperance: 'TemperanceIcon', justice: 'JusticeIcon' },
+  stat: { fortitude: 'HPIcon', prudence: 'PrudenceIcon', temperance: 'TemperanceIcon', justice: 'JusticeIcon' },
   hp: 'HPIcon',
   sp: 'SPIcon'
 } as const;
@@ -99,19 +103,6 @@ const DEPARTMENT_SECTORS: Record<DepartmentName, string> = {
   extraction: 'extraction-dept', record: 'record-dept'
 };
 
-function getGuildEmojiObject(guild: any, emojiName: string) {
-  const name = String(emojiName || '').trim();
-  if (!name) return null;
-
-  return guild?.emojis?.cache?.find((entry: any) => entry.name?.toLowerCase() === name.toLowerCase())
-    ?? (globalThis as any).client?.emojis?.cache?.find((entry: any) => entry.name?.toLowerCase() === name.toLowerCase())
-    ?? null;
-}
-
-function getGuildEmojiString(guild: any, emojiName: string, fallback = ''): string {
-  const found = getGuildEmojiObject(guild, emojiName);
-  return found ? found.toString() : fallback;
-}
 
 function isCriticallyLow(agent: any) {
   return agent.hp <= agent.max_hp * 0.2 || agent.sp <= agent.max_sp * 0.2;
@@ -601,6 +592,8 @@ function getFavorLabel(score: number) {
 }
 
 function getWorkFavorLabel(abno: any, workType: WorkType, statLevel: number) {
+  const table = (wikiAbnormality(abno)?.preferences as Record<string, number[]> | undefined)?.[workType];
+  if (table?.length) return getFavorLabel(table[clamp(Math.floor(statLevel), 1, 5) - 1]! / 100);
   const affinity = getCurrentWorkAffinity(abno, workType);
   // The underlying affinity is intentionally hidden. The table behaves like a
   // staff-facing preference chart: higher employee tiers reveal better/worse
@@ -948,19 +941,19 @@ function spendStatPoint(agent: any, stat: StatName) {
 }
 
 function calculateMaxHp(fortitude: number) {
-  return 90 + fortitude * 12;
+  return rawPoints({ fortitude }, 'fortitude');
 }
 
 function calculateMaxSp(prudence: number, agent?: any) {
-  let max = 80 + prudence * 12;
+  let max = rawPoints(agent ?? { prudence }, 'prudence');
   const gift = agent ? getGift(agent) : null;
   if (gift?.maxSpMult) max = Math.floor(max * gift.maxSpMult);
   return max;
 }
 
 function syncAgentMaxStats(agent: any) {
-  const newMaxHp = calculateMaxHp(agent.fortitude);
-  const newMaxSp = calculateMaxSp(agent.prudence, agent);
+  const newMaxHp = rawPoints(agent, 'fortitude');
+  const newMaxSp = Math.floor(rawPoints(agent, 'prudence') * (getGift(agent)?.maxSpMult ?? 1));
   const hpRatio = agent.max_hp > 0 ? agent.hp / agent.max_hp : 1;
   const spRatio = agent.max_sp > 0 ? agent.sp / agent.max_sp : 1;
 
@@ -972,7 +965,9 @@ function syncAgentMaxStats(agent: any) {
   };
 }
 
-function applyDamage(agent: any, amount: number, type: string) {
+function applyDamage(agent: any, amount: number, type: string, context: { work?: boolean; risk?: string } = {}) {
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  if (agent.status === 'dead') return 0;
   const suit = getSuit(agent)!;
   let multiplier = 1.0;
   if (type === 'RED') multiplier = suit.red;
@@ -981,12 +976,24 @@ function applyDamage(agent: any, amount: number, type: string) {
   if (type === 'PALE') multiplier = suit.pale;
 
   const gift = getGift(agent) as GiftDef | null;
-  if (gift?.incomingDamageMult) amount = amount * gift.incomingDamageMult;
+  if (!context.work && gift?.incomingDamageMult) amount = amount * gift.incomingDamageMult;
 
-  const trait = agent.trait === 'cautious' ? 0.90 : (agent.trait === 'reckless' ? 1.10 : 1.0);
-  const defense = Math.max(0.75, 1 - suit.defense * 0.04);
+  const trait = context.work ? 1 : agent.trait === 'cautious' ? 0.90 : (agent.trait === 'reckless' ? 1.10 : 1.0);
+  const defense = context.work ? 1 : Math.max(0.75, 1 - suit.defense * 0.04);
+  const suitRisk = equipmentRisk(agent.suit);
   const baseDamage = type === 'PALE' ? agent.max_hp * amount / 100 : amount;
-  let actualDamage = Math.max(0, Math.floor(baseDamage * multiplier * trait * defense));
+  const signedDamage = baseDamage * multiplier * trait * defense * (context.risk ? riskMultiplier(context.risk, suitRisk) : 1);
+  if (signedDamage < 0) {
+    const healing = Math.floor(-signedDamage);
+    if (['RED', 'BLACK', 'PALE'].includes(type)) agent.hp = Math.min(agent.max_hp, agent.hp + healing);
+    if (['WHITE', 'BLACK'].includes(type)) agent.sp = Math.min(agent.max_sp, agent.sp + healing);
+    return 0;
+  }
+  let actualDamage = Math.max(0, Math.floor(signedDamage));
+  const progress = Progression.agentProgress(agent);
+  if (progress.shieldExpiresAt && progress.shieldExpiresAt <= Date.now()) {
+    for (const color of ['red', 'white', 'black', 'pale']) agent[`shield_${color}`] = 0;
+  }
   const shieldKey = `shield_${String(type).toLowerCase()}`;
   const shield = Math.max(0, Number(agent[shieldKey] ?? 0));
   if (shield > 0) {
@@ -1044,21 +1051,12 @@ function experienceToNext(level: number) {
 function awardExperience(agent: any, amount: number) {
   const messages: string[] = [];
   agent.experience += amount;
-
-  while (agent.experience >= experienceToNext(agent.level)) {
-    agent.experience -= experienceToNext(agent.level);
-    agent.level += 1;
-    const stat = pick<StatName>(['fortitude', 'prudence', 'temperance', 'justice']);
-    Progression.growStat(agent, stat, 1);
-    agent.promotions += 1;
-    const synced = syncAgentMaxStats(agent);
-    agent.max_hp = synced.maxHp;
-    agent.max_sp = synced.maxSp;
-    agent.hp = clamp(agent.hp + 10, 0, agent.max_hp);
-    agent.sp = clamp(agent.sp + 10, 0, agent.max_sp);
-    messages.push(`🌟 **level up!** ${agent.name} reached **level ${agent.level}** and gained +1 ${stat} point!`);
+  const tier = agentTier(Progression.STATS.map(stat => rawPoints(agent, stat)));
+  if (tier > agent.level) {
+    agent.promotions += tier - agent.level;
+    messages.push(`🌟 **${agent.name}** reached tier **${tier}**.`);
   }
-
+  agent.level = tier;
   return messages;
 }
 
@@ -1271,11 +1269,25 @@ function resolvePanicPhase(guildId: string, facility: any) {
   return { messages, breached };
 }
 
+function withWikiTemplate(template: any) {
+  const wiki = wikiAbnormality(template);
+  if (!wiki) return template;
+  return { ...template, risk: wiki.risk || template.risk,
+    qliphoth: wiki.qliphoth ?? template.qliphoth,
+    damage_type: ['RED','WHITE','BLACK','PALE'].includes(wiki.damageType || '') ? wiki.damageType : template.damage_type,
+    damage_amt: wiki.damage?.length ? (wiki.damage[0]! + wiki.damage[wiki.damage.length - 1]!) / 2 : template.damage_amt,
+    instinct: wiki.preferences.instinct?.[0] === undefined ? template.instinct : wiki.preferences.instinct[0] / 100,
+    insight: wiki.preferences.insight?.[0] === undefined ? template.insight : wiki.preferences.insight[0] / 100,
+    attachment: wiki.preferences.attachment?.[0] === undefined ? template.attachment : wiki.preferences.attachment[0] / 100,
+    repression: wiki.preferences.repression?.[0] === undefined ? template.repression : wiki.preferences.repression[0] / 100 };
+}
+
 function seedAbnormalities(guildId: string) {
   const existing = db.query(`SELECT COUNT(*) AS count FROM abnormalities WHERE guild_id = ?`).get(guildId) as { count: number };
   if (Number(existing.count) > 0) return;
 
-  for (const template of ABNORMALITY_TEMPLATES) {
+  for (const original of ABNORMALITY_TEMPLATES) {
+    const template = withWikiTemplate(original);
     const giftId = (template as any).gift?.id ?? '';
     const activeProcess = pick<WorkType>(['instinct', 'insight', 'attachment', 'repression']);
     const meltdownTimer = 0;
@@ -1316,12 +1328,13 @@ function findAbnormalityTemplate(input: string) {
   const configuredTemplate = ABNORMALITY_TEMPLATES.find(template =>
     template.name.toLowerCase() === normalized || String((template as any).script_id ?? '').toLowerCase() === normalized
   ) ?? ABNORMALITY_TEMPLATES.find(template => template.name.toLowerCase().includes(normalized)) ?? null;
-  if (configuredTemplate) return configuredTemplate;
+  if (configuredTemplate) return withWikiTemplate(configuredTemplate);
 
-  const scriptId = Object.keys(ABNORMALITY_SCRIPTS).find(id => id.toLowerCase() === normalized);
+  const wiki = wikiData.abnormalities.find(a => a.name.toLowerCase() === normalized || (a.code && a.code !== 'X-XX-XX' && a.code.toLowerCase() === normalized));
+  const scriptId = Object.keys(ABNORMALITY_SCRIPTS).find(id => id.toLowerCase() === normalized || (wiki?.code && id === wiki.code));
   if (!scriptId) return null;
-  return {
-    name: scriptId,
+  return withWikiTemplate({
+    name: wiki?.name || scriptId,
     risk: 'HE',
     hp: 1500,
     qliphoth: 2,
@@ -1337,7 +1350,7 @@ function findAbnormalityTemplate(input: string) {
     script_id: scriptId,
     can_breach: 1,
     is_tool: 0
-  } as const;
+  });
 }
 
 function runAbnormalityTestAction(guildId: string, action: AbnormalityTestAction, input: string) {
@@ -1645,9 +1658,12 @@ function triggerMeltdownAlarm(guildId: string, facility: any) {
   if (!current || current.meltdown_alarm) return false;
   const progress = Progression.facilityProgress(current);
   progress.meltdown += 1;
+  progress.overload = {};
   Progression.saveFacilityProgress(current, progress);
+  const supplies = Progression.stimLoadout(current);
+  db.query("UPDATE agents SET stim_charges=? WHERE guild_id=? AND status<>'dead'").run(JSON.stringify(supplies), guildId);
   const abnormalities = (db.query(`SELECT * FROM abnormalities WHERE guild_id = ? AND is_breaching = 0 ORDER BY id`).all(guildId) as any[])
-    .filter(abno => !progress.cores.includes(abno.sector || 'control'));
+    .filter(abno => ['command', 'record'].includes(progress.core?.department) || !progress.cores.includes(abno.sector || 'control'));
   if (!abnormalities.length) return false;
 
   const targetCount = 1 + Math.min(2, Math.floor(Math.random() * 3));
@@ -1677,7 +1693,7 @@ function resolveMeltdownTimers(guildId: string, facility: any): any[] {
   for (const id of targets) {
     const abno = db.query(`SELECT * FROM abnormalities WHERE id = ? AND guild_id = ?`).get(id, guildId) as any;
     if (!abno) continue;
-    if (Progression.facilityProgress(facility).cores.includes(abno.sector || 'control')) {
+    if (!['command', 'record'].includes(Progression.facilityProgress(facility).core?.department) && Progression.facilityProgress(facility).cores.includes(abno.sector || 'control')) {
       db.query("UPDATE abnormalities SET meltdown_timer=0, meltdown_state='stable' WHERE id=? AND guild_id=?").run(abno.id, guildId);
       continue;
     }
@@ -1871,9 +1887,23 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
       flags: MessageFlags.Ephemeral
     });
   }
-  if (Number(facility.phase) >= 22) {
-    return interaction.reply({ content: '🌙 it’s **22:00**. work is over for today; clear any threats, then use `/end-day`.', flags: MessageFlags.Ephemeral });
+  if (agent.department && agent.department !== 'general' && abno.sector && agent.department !== abno.sector && !Progression.facilityProgress(facility).research.includes('joint_command')) {
+    return interaction.reply({ content: '🔒 travel to that department first, or ask the manager to research Joint Command.', flags: MessageFlags.Ephemeral });
   }
+
+  const verifiedStats = wikiAbnormality(abno);
+  if (verifiedStats?.maxEnergy && verifiedStats.damage?.length) {
+    abno.risk = verifiedStats.risk;
+    if (['RED', 'WHITE', 'BLACK', 'PALE'].includes(verifiedStats.damageType || '')) abno.damage_type = verifiedStats.damageType;
+  }
+  const normalizedStats = syncAgentMaxStats(agent);
+  Object.assign(agent, { hp: normalizedStats.hp, sp: normalizedStats.sp, max_hp: normalizedStats.maxHp, max_sp: normalizedStats.maxSp });
+  const startingHp = agent.hp, startingSp = agent.sp;
+  // Materialize point migration before replacing legacy tier values.
+  agent.progression = JSON.stringify(Progression.agentProgress(agent));
+  for (const stat of Progression.STATS) agent[stat] = statTier(rawPoints(agent, stat));
+  const observed = ensureAgentKnowledge(interaction.guildId!, agent.discord_id, abno.id);
+  agent.observationLevel = Math.min(4, Math.floor(['instinct','insight','attachment','repression'].reduce((sum, work) => sum + Number(observed[`${work}_pe`] || 0), 0) / 2));
 
   const maxLevel = WORK_LEVEL_MAX[abno.risk] ?? 2;
   level = clamp(Math.floor(level), 1, maxLevel);
@@ -1909,7 +1939,8 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
 
   if (Progression.defuseWorkMeltdown(interaction.guildId!, abno)) eventMessages.push('🟢 work defused the targeted Qliphoth meltdown.');
   const chance = calculateWorkChance(agent, abno, workType, facility, level);
-  const result = workQuality(chance, level, behaviour);
+  const verifiedWork = rollWikiWork(abno, chance);
+  const result = verifiedWork ?? workQuality(chance, level, behaviour);
   let totalDamage = 0;
   const tickResults: string[] = [];
   let peBoxes = result.boxes;
@@ -1917,12 +1948,16 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   // predatory abnormalities hit harder against a handler who is already worn down
   let effectiveDamageAmt = abno.damage_amt * shift.damageMultiplier * (1 + (level - 1) * 0.25);
   if (behaviour === 'predatory' && wasWeakened) effectiveDamageAmt *= 1.5;
+  const wiki = wikiAbnormality(abno);
+  if (verifiedWork && wiki?.damage?.length) {
+    effectiveDamageAmt = (wiki.damage[0]! + wiki.damage[wiki.damage.length - 1]!) / 2;
+  }
 
   agent.status = 'working';
   agent.assignments += 1;
   updateAgent(agent);
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < (verifiedWork ? 0 : 5); i++) {
     const tickChance = clamp(chance + (result.tier === 'good' ? 0.08 : result.tier === 'critical' ? -0.10 : 0), 0.05, 0.98);
     if (Math.random() < tickChance) {
       if (Math.random() < 0.18) {
@@ -1953,7 +1988,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   }
 
   const trait = getTrait(agent);
-  if (agent.trait === 'lucky' && Math.random() < 0.25) {
+  if (!verifiedWork && agent.trait === 'lucky' && Math.random() < 0.25) {
     peBoxes += 1;
     tickResults.push('🍀 lucky PE');
   }
@@ -2103,8 +2138,8 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
         revealedPositive += 1;
       } else {
         revealedNegative += 1;
-        const baseDamage = Math.max(1, Math.floor(effectiveDamageAmt * 0.7));
-        const actualDamage = applyDamage(agent, baseDamage, abno.damage_type);
+        const baseDamage = verifiedWork && wiki?.damage?.length ? rand(wiki.damage[0]!, wiki.damage[wiki.damage.length - 1]!) : Math.max(1, Math.floor(effectiveDamageAmt * 0.7));
+        const actualDamage = applyDamage(agent, baseDamage, abno.damage_type, { work: true, risk: verifiedWork ? abno.risk : undefined });
         liveDamageTotal += actualDamage;
         lastDamageText = formatWorkDamageTag(baseDamage, actualDamage, abno.damage_type, interaction.guild);
         updateAgent(agent);
@@ -2112,7 +2147,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
 
       const progressBar = renderPEProgress(revealedPositive, revealedNegative, totalMeter);
       const boxVisual = buildPEVisualString(revealedPositive, revealedNegative, totalMeter);
-      const hpText = `❤️ ${agent.hp}/${agent.max_hp} · 🧠 ${agent.sp}/${agent.max_sp}`;
+      const hpText = `${getGuildEmojiString(interaction.guild, 'HPIcon', '❤️')} ${agent.hp}/${agent.max_hp} · ${getGuildEmojiString(interaction.guild, 'SPIcon', '🧠')} ${agent.sp}/${agent.max_sp}`;
       const workEmoji = getGuildEmojiString(interaction.guild, getWorkType(workType).icon, getWorkType(workType).label);
       const liveText = `🧪 **${abno.name}** — ${workEmoji} **${getWorkType(workType).label}**\n${progressBar}\n${boxVisual}\n${hpText}\n⚔️ ${lastDamageText}`;
 
@@ -2175,8 +2210,14 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   const riskWeight = RISK_VALUES[abno.risk] ?? 1;
   const expGain = Math.max(4, energyGain + riskWeight * 3 + (result.tier === 'good' ? 5 : 0));
   const levelMessages = awardExperience(agent, expGain);
-  const statGain = Progression.awardWorkProgress(agent, abno, workType, positiveGoal, phaseFacility);
+  const statGain = Progression.awardWorkProgress(agent, abno, workType, positiveGoal, phaseFacility, {
+    hp: Math.max(0, startingHp - agent.hp) / agent.max_hp,
+    sp: Math.max(0, startingSp - agent.sp) / agent.max_sp
+  });
   if (statGain) levelMessages.push(`📊 +${statGain} ${getWorkType(workType).stat} point from work.`);
+  if (agent.status !== 'dead' && Progression.defuseBossMeltdown(interaction.guildId!, abno.id)) levelMessages.push('✨ Arbiter containment target cleared.');
+  const activeCore = Progression.facilityProgress(db.query('SELECT * FROM facility WHERE guild_id=?').get(interaction.guildId!)).core;
+  if (activeCore?.version === 2 && Progression.advanceCore(phaseFacility, agent.department, false)) levelMessages.push(`✨ ${activeCore.department} core suppressed.`);
   if (agent.status !== 'dead' && result.tier === 'good') {
     const fresh = db.query('SELECT * FROM facility WHERE guild_id=?').get(interaction.guildId!) as any;
     if (Progression.advanceCore(fresh, agent.department, true)) levelMessages.push(`✨ ${agent.department} core suppressed: this department is now immune to Qliphoth meltdowns.`);
@@ -2200,7 +2241,7 @@ async function executeWork(interaction: any, agent: any, abno: any, workType: Wo
   resultText += `⏱️ meltdown status: **${getMeltdownState(abno).icon} ${getMeltdownState(abno).label}** · **${formatMeltdownTimer(abno)}**\n`;
   const favorKnown = Number(knowledge?.[`${workType}_pe`] ?? 0) >= 2;
   resultText += `🎯 work favor: **${favorKnown ? getWorkFavorLabel(abno, workType, getEffectiveStat(agent, work.stat)) : 'undocumented'}**\n`;
-  resultText += `📈 result: **${result.tier.toUpperCase()}**\n`;
+  resultText += `${getGuildEmojiString(interaction.guild, result.tier === 'good' ? 'GoodResult' : result.tier === 'normal' ? 'NormalResult' : 'BadResult', '📈')} result: **${result.tier.toUpperCase()}**\n`;
   resultText += `⚡ generated **${energyGain} energy** from **${peBoxes} PE boxes**\n`;
   resultText += `💥 suffered **${totalDamage} ${abno.damage_type} damage** (including **${workResult.liveDamageTotal}** from **${negativeGoal}** negative box(es))\n`;
   resultText += `🧠 gained **${expGain} EXP**\n`;
@@ -2272,7 +2313,7 @@ function facilityDashboard(facility: any, agents: any[], abnormalities: any[]) {
   return embed;
 }
 
-function agentStatusEmbed(agent: any, facility: any) {
+function agentStatusEmbed(agent: any, facility: any, guild?: any) {
   const weapon = getWeapon(agent)!;
   const trait = getTrait(agent)!;
   const gift = getGift(agent) as GiftDef | null;
@@ -2282,13 +2323,10 @@ function agentStatusEmbed(agent: any, facility: any) {
     .setColor(agent.status === 'dead' ? 0x000000 : agent.status === 'panicked' ? 0xFFFF00 : 0x00FFFF)
     .setDescription(`**level ${agent.level}** · ${agent.status.toUpperCase()} · trait: **${trait.name}**\n${trait.description}`)
     .addFields(
-      { name: '❤️ HP', value: `${agent.hp}/${agent.max_hp}`, inline: true },
-      { name: '🧠 SP', value: `${agent.sp}/${agent.max_sp}`, inline: true },
-      { name: '⭐ EXP', value: `${agent.experience}/${experienceToNext(agent.level)}`, inline: true },
-      { name: '💪 Fortitude', value: `${getEffectiveStat(agent, 'fortitude')}${gift?.statBonus?.fortitude ? ` (${agent.fortitude}+${gift.statBonus.fortitude})` : ''}`, inline: true },
-      { name: '🧠 Prudence', value: `${getEffectiveStat(agent, 'prudence')}${gift?.statBonus?.prudence ? ` (${agent.prudence}+${gift.statBonus.prudence})` : ''}`, inline: true },
-      { name: '💗 Temperance', value: `${getEffectiveStat(agent, 'temperance')}${gift?.statBonus?.temperance ? ` (${agent.temperance}+${gift.statBonus.temperance})` : ''}`, inline: true },
-      { name: '⚔️ Justice', value: `${getEffectiveStat(agent, 'justice')}${gift?.statBonus?.justice ? ` (${agent.justice}+${gift.statBonus.justice})` : ''}`, inline: true },
+      { name: `${getGuildEmojiString(guild, 'HPIcon', '❤️')} HP`, value: `${agent.hp}/${agent.max_hp}`, inline: true },
+      { name: `${getGuildEmojiString(guild, 'SPIcon', '🧠')} SP`, value: `${agent.sp}/${agent.max_sp}`, inline: true },
+      { name: '⭐ career EXP', value: `${agent.experience}`, inline: true },
+      ...(['fortitude', 'prudence', 'temperance', 'justice'] as const).map(stat => ({ name: `${getGuildEmojiString(guild, LOBOTOMY_EMOJIS.stat[stat], '◆')} ${stat}`, value: `${rawPoints(agent, stat)} points · tier ${statTier(rawPoints(agent, stat))}`, inline: true })),
       { name: '⚔️ Weapon', value: `${weapon.name} (${weapon.type}: ${weapon.min}-${weapon.max})`, inline: true },
       { name: '🛡️ Suit', value: EGO_SUITS[agent.suit]?.name || 'Basic Suit', inline: true },
       { name: '💠 Gift', value: gift ? `${gift.icon} ${gift.name}\n${gift.drawback}` : `none equipped (owns ${ownedGifts})`, inline: false },
@@ -2554,6 +2592,9 @@ async function endDay(interaction: any, facility: any) {
     return interaction.reply({ content: '⏳ let the current work assignment finish before ending the day.', flags: MessageFlags.Ephemeral });
   }
   if (facility.ordeal_active) return interaction.reply({ content: '⚠️ suppress the active ordeal with `/ordeal action:fight` before ending the day.', flags: MessageFlags.Ephemeral });
+  Progression.advanceCore(facility, '', false);
+  facility = db.query('SELECT * FROM facility WHERE guild_id=?').get(guildId) as any;
+  if (Progression.facilityProgress(facility).core) return interaction.reply({ content: 'finish the active core suppression before ending the day. check `/core` for its goal.', flags: MessageFlags.Ephemeral });
   const activeBreaches = db.query(`SELECT * FROM abnormalities WHERE guild_id=? AND is_breaching=1`).all(guildId) as any[];
   if (activeBreaches.length) {
     return interaction.reply({
@@ -2763,7 +2804,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       else if (commandName === 'status') {
         const agent = findAgent(user.id, guildId);
         if (!agent) return interaction.reply({ content: 'use `/join` to make an agent first.', flags: MessageFlags.Ephemeral });
-        await interaction.reply({ embeds: [agentStatusEmbed(agent, facility)] });
+        await interaction.reply({ embeds: [agentStatusEmbed(agent, facility, interaction.guild)] });
       }
 
 
@@ -2890,7 +2931,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             ...(['instinct', 'insight', 'attachment', 'repression'] as WorkType[]).map(type =>
               new ButtonBuilder()
                 .setCustomId(buildWorkPromptId('type', user.id, type, selected.id))
-                .setLabel(`${getGuildEmojiString(interaction.guild, getWorkType(type).icon, getWorkType(type).label)} ${getWorkType(type).label}`)
+                .setLabel(getWorkType(type).label)
+                .setEmoji(workButtonEmoji(interaction.guild, getWorkType(type).icon) ?? { name: { instinct: '❤️', insight: '🧠', attachment: '💗', repression: '⚔️' }[type] })
                 .setStyle(type === 'instinct' ? ButtonStyle.Danger : type === 'insight' ? ButtonStyle.Primary : type === 'attachment' ? ButtonStyle.Secondary : ButtonStyle.Success)
             )
           );
@@ -3288,8 +3330,8 @@ ${quest}` : ''}`;
         const behaviour = getBehaviour(abno);
         const weapon = getWeapon(agent)!;
         const facilitySecurity = Number(facility.security_level);
-        let agentDamage = rand(weapon.min, weapon.max);
-        agentDamage = Math.floor(agentDamage * (1 + getEffectiveStat(agent, 'justice') * 0.04) * weapon.speed);
+        let agentDamage = rollEgoAttack(agent, weapon).damage;
+        agentDamage = Math.floor(agentDamage * attackSpeed(rawPoints(agent, 'justice')) * weapon.speed);
         if (agent.trait === 'reckless') agentDamage = Math.floor(agentDamage * 1.15);
         agentDamage += facilitySecurity;
 
@@ -3313,8 +3355,11 @@ ${quest}` : ''}`;
           }
         }
 
-        const incoming = applyDamage(agent, finalAbnoDamage, abno.damage_type);
-        abno.hp -= weapon.type === 'PALE' ? Math.floor(abno.max_hp * finalAgentDamage / 100) : finalAgentDamage;
+        const incoming = applyDamage(agent, finalAbnoDamage, abno.damage_type, { risk: abno.risk });
+        finalAgentDamage = Math.floor(finalAgentDamage * riskMultiplier(equipmentRisk(agent.weapon), abno.risk));
+        const dealtDamage = Math.min(Math.max(0, abno.hp), Math.max(0, finalAgentDamage));
+        abno.hp -= finalAgentDamage;
+        finishEgoAttack(agent, dealtDamage, abno.hp <= 0);
         agent.assignments += 1;
 
         const bInfo = BEHAVIOUR_INFO[behaviour];
@@ -3417,8 +3462,8 @@ ${quest}` : ''}`;
         const behaviour = getBehaviour(abno);
         const weapon = getWeapon(agent)!;
         const facilitySecurity = Number(facility.security_level);
-        let agentDamage = rand(weapon.min, weapon.max);
-        agentDamage = Math.floor(agentDamage * (1 + getEffectiveStat(agent, 'justice') * 0.04) * weapon.speed);
+        let agentDamage = rollEgoAttack(agent, weapon).damage;
+        agentDamage = Math.floor(agentDamage * attackSpeed(rawPoints(agent, 'justice')) * weapon.speed);
         if (agent.trait === 'reckless') agentDamage = Math.floor(agentDamage * 1.15);
         agentDamage += facilitySecurity;
 
@@ -3441,8 +3486,11 @@ ${quest}` : ''}`;
           }
         }
 
-        const incoming = applyDamage(agent, finalAbnoDamage, abno.damage_type);
-        abno.hp -= weapon.type === 'PALE' ? Math.floor(abno.max_hp * finalAgentDamage / 100) : finalAgentDamage;
+        const incoming = applyDamage(agent, finalAbnoDamage, abno.damage_type, { risk: abno.risk });
+        finalAgentDamage = Math.floor(finalAgentDamage * riskMultiplier(equipmentRisk(agent.weapon), abno.risk));
+        const dealtDamage = Math.min(Math.max(0, abno.hp), Math.max(0, finalAgentDamage));
+        abno.hp -= finalAgentDamage;
+        finishEgoAttack(agent, dealtDamage, abno.hp <= 0);
         agent.assignments += 1;
 
         const bInfo = BEHAVIOUR_INFO[behaviour];

@@ -1,6 +1,8 @@
 import { clamp } from '../utils/clamp';
 import { pick } from '../utils/random';
 import { getWorkType } from '../config/workTypes';
+import { wikiAbnormality, wikiWorkChance } from './wikiRules';
+import wikiEquipment from '../config/wikiEquipment.json';
 import type { Behaviour, DamageType, GiftDef, PanicBehaviorKey, WorkType } from '../types/game';
 
 export type { GiftDef } from '../types/game';
@@ -54,15 +56,20 @@ export const DAMAGE_TYPES: Record<DamageType, { label: string; icon: string; des
 export const EGO_WEAPONS: Record<string, { name: string; type: DamageType; min: number; max: number; speed: number }> = {
   riot_stick: { name: 'Riot Stick', type: 'RED', min: 2, max: 4, speed: 1.0 },
   penitence: { name: 'Penitence', type: 'WHITE', min: 3, max: 5, speed: 1.05 },
-  mimicry: { name: 'Mimicry', type: 'RED', min: 12, max: 25, speed: 0.8 },
+  mimicry: { name: 'Mimicry', type: 'RED', min: 10, max: 14, speed: 0.8 },
   smile: { name: 'Smile', type: 'BLACK', min: 10, max: 20, speed: 0.9 }
 };
 
 export const EGO_SUITS: Record<string, { name: string; red: number; white: number; black: number; pale: number; defense: number }> = {
   basic_suit: { name: 'Basic Suit', red: 1.0, white: 1.0, black: 1.0, pale: 1.5, defense: 0 },
   penitence_suit: { name: 'Penitence Suit', red: 0.9, white: 0.8, black: 1.0, pale: 1.5, defense: 1 },
-  mimicry_suit: { name: 'Mimicry Suit', red: 0.2, white: 0.4, black: 0.5, pale: 1.2, defense: 3 }
+  mimicry_suit: { name: 'Mimicry Suit', red: 0.2, white: 0.5, black: 0.5, pale: 1.0, defense: 0 }
 };
+
+for (const item of wikiEquipment) {
+  if (item.category === 'weapon') EGO_WEAPONS[item.id] = { name: item.name, type: item.type as DamageType, min: item.min!, max: item.max!, speed: item.speed! };
+  else EGO_SUITS[item.id] = { name: item.name, red: item.red!, white: item.white!, black: item.black!, pale: item.pale!, defense: 0 };
+}
 
 export const TRAITS: Record<string, { name: string; description: string }> = {
   energetic: { name: 'energetic', description: '+10% work consistency' },
@@ -138,6 +145,13 @@ export const EGO_EQUIPMENT_SEED: Array<{ id: string; category: 'weapon' | 'suit'
   { id: 'penitence_suit', category: 'suit', name: 'Penitence Suit', red: 0.9, white: 0.8, black: 1.0, pale: 1.5, defense: 1, description: 'A light armor set tuned for mental resistance.' },
   { id: 'mimicry_suit', category: 'suit', name: 'Mimicry Suit', red: 0.2, white: 0.4, black: 0.5, pale: 1.2, defense: 3, description: 'High-risk, high-reward armor that heavily reduces physical pressure.' }
 ];
+for (const item of wikiEquipment) {
+  const entry = { ...item, category: item.category as 'weapon' | 'suit', type: item.type as DamageType | undefined,
+    description: `Wiki equipment stats. Special abilities may not yet be available; see /help.` };
+  const old = EGO_EQUIPMENT_SEED.findIndex(seed => seed.id === item.id);
+  if (old >= 0) EGO_EQUIPMENT_SEED[old] = entry;
+  else EGO_EQUIPMENT_SEED.push(entry);
+}
 
 export function getBehaviour(abno: any): Behaviour {
   return (BEHAVIOUR_INFO as any)[abno.behaviour] ? (abno.behaviour as Behaviour) : 'docile';
@@ -242,6 +256,10 @@ export function applyPanicState(agent: any) {
 }
 
 export function calculateWorkChance(agent: any, abno: any, workType: WorkType, facility: any, level: number = 1) {
+  let progress: any = {};
+  try { progress = JSON.parse(facility.progression || '{}'); } catch {}
+  const verified = wikiWorkChance(agent, abno, Number(agent.observationLevel || 0), Number(progress.overload?.[String(abno.id)] || 0))(workType);
+  if (verified !== null) return verified;
   const work = getWorkType(workType);
   const stat = Number(agent[work.stat] ?? 1);
   const affinity = getCurrentWorkAffinity(abno, workType);
@@ -297,6 +315,8 @@ export function workQuality(chance: number, level: number = 1, behaviour: Behavi
 }
 
 export function getPEBoxTotal(abno: any) {
+  const verified = wikiAbnormality(abno)?.maxEnergy;
+  if (verified) return verified;
   const riskWeight = RISK_VALUES[String(abno.risk)] ?? 1;
   return clamp(5 + Math.max(0, riskWeight - 1), 5, 8);
 }
